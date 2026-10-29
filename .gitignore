@@ -1,0 +1,6 @@
+# Godot cache and user data
+.godot/
+*.tmp
+# Blender backup files
+*.blend1
+__pycache__/
