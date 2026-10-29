@@ -31,6 +31,7 @@ var _head_look := Vector2.ZERO
 var _prev_vel := Vector3.ZERO
 var _eye_mat: ShaderMaterial
 var _fur_mats: Array[ShaderMaterial] = []
+var _shell_nodes: Array[MeshInstance3D] = []
 var _model: Node3D
 
 
@@ -56,10 +57,12 @@ func _collect(n: Node) -> void:
 		_collect(c)
 
 
-func _fur_chain(length: float, density: float) -> ShaderMaterial:
-	var shells: int = [4, 9, 14][Game.quality]
-	var first: ShaderMaterial = null
-	var prev: ShaderMaterial = null
+## Returns [skin, shells]: the skin material and the first of the chained
+## shell passes. Shells go on a separate shadowless copy of the mesh, so the
+## hero casts one solid shadow instead of a speckled one from every layer.
+func _fur_chain(length: float, density: float) -> Array[ShaderMaterial]:
+	var shells: int = [2, 4, 9, 14][Game.quality]
+	var mats: Array[ShaderMaterial] = []
 	for i in shells + 1:
 		var m := ShaderMaterial.new()
 		m.shader = FUR
@@ -68,16 +71,17 @@ func _fur_chain(length: float, density: float) -> ShaderMaterial:
 		m.set_shader_parameter("density", density)
 		m.render_priority = i
 		_fur_mats.append(m)
-		if prev == null:
-			first = m
-		else:
-			prev.next_pass = m
-		prev = m
-	return first
+		if i > 1:
+			mats[i - 1].next_pass = m
+		mats.append(m)
+	return [mats[0], mats[1]]
 
 
 func _apply_materials() -> void:
 	_fur_mats.clear()
+	for n in _shell_nodes:
+		n.queue_free()
+	_shell_nodes.clear()
 	var body_fur := _fur_chain(0.015, 780.0)
 	var ear_fur := _fur_chain(0.007, 1100.0)
 	_eye_mat = ShaderMaterial.new()
@@ -106,9 +110,19 @@ func _apply_materials() -> void:
 			"Flower":
 				mi.material_override = flower
 			"Ear_L", "Ear_R":
-				mi.material_override = ear_fur
+				_dress_fur(mi, ear_fur)
 			_:
-				mi.material_override = body_fur
+				_dress_fur(mi, body_fur)
+
+
+func _dress_fur(mi: MeshInstance3D, fur: Array[ShaderMaterial]) -> void:
+	mi.material_override = fur[0]
+	var shell := MeshInstance3D.new()
+	shell.mesh = mi.mesh
+	shell.material_override = fur[1]
+	shell.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mi.add_child(shell)
+	_shell_nodes.append(shell)
 
 
 ## Runs on the physics tick so physics interpolation smooths the parts
@@ -119,8 +133,8 @@ func _physics_process(delta: float) -> void:
 	_time += delta
 	var flat := Vector3(velocity.x, 0, velocity.z)
 	var speed := flat.length()
-	var move := clampf(speed / 1.4, 0.0, 1.0)
-	var run := clampf((speed - 1.4) / 1.8, 0.0, 1.0)
+	var move := clampf(speed / 2.1, 0.0, 1.0)
+	var run := clampf((speed - 2.1) / 2.5, 0.0, 1.0)
 	var local_vel := global_basis.inverse() * flat
 	var accel := (velocity - _prev_vel) / maxf(delta, 0.001)
 	_prev_vel = velocity
@@ -131,7 +145,7 @@ func _physics_process(delta: float) -> void:
 	_was_grounded = grounded
 	_land = move_toward(_land, 0.0, delta * 4.0)
 
-	_phase += delta * (5.5 + run * 5.0) * move
+	_phase += delta * (7.0 + run * 5.5) * move
 	var s := sin(_phase)
 	var c := cos(_phase)
 	var air := 0.0 if grounded else 1.0

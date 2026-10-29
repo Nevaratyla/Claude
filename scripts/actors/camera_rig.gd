@@ -16,6 +16,8 @@ var cinematic := false          # Director drives the camera directly
 
 func _ready() -> void:
 	top_level = true
+	# The rig is moved every rendered frame, so it must not be physics-interpolated.
+	physics_interpolation_mode = Node.PHYSICS_INTERPOLATION_MODE_OFF
 	_arm = SpringArm3D.new()
 	_arm.spring_length = distance
 	_arm.margin = 0.08
@@ -30,7 +32,13 @@ func _ready() -> void:
 	_arm.add_child(camera)
 	camera.make_current()
 	if target:
-		_pos = target.global_position
+		_pos = _target_pos()
+
+
+## The hero moves on physics ticks (60 Hz); reading its interpolated transform
+## keeps the camera smooth at any frame rate instead of stepping 60 times a second.
+func _target_pos() -> Vector3:
+	return target.get_global_transform_interpolated().origin
 
 
 ## Keeps these bodies (the heroes) from pushing the camera in.
@@ -54,7 +62,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _process(delta: float) -> void:
 	if cinematic or target == null:
 		return
-	var goal := target.global_position + Vector3(0, 0.42, 0)
+	var goal := _target_pos() + Vector3(0, 0.42, 0)
 	_pos = _pos.lerp(goal, 1.0 - exp(-delta * 12.0))
 	global_position = _pos
 	rotation = Vector3(pitch, yaw, 0)

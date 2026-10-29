@@ -4,9 +4,9 @@ extends CharacterBody3D
 ## `wants_jump`, `wants_crouch` every physics tick; this class moves the body
 ## and feeds the Creature visual.
 
-const WALK := 1.4
-const RUN := 3.2
-const SNEAK := 0.7
+const WALK := 2.1
+const RUN := 4.6
+const SNEAK := 0.9
 const ACCEL := 9.0
 const AIR_ACCEL := 2.5
 const JUMP_V := 3.3

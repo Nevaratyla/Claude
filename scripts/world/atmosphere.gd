@@ -90,7 +90,9 @@ func _ready() -> void:
 
 
 func _apply_quality(q: int) -> void:
-	env.sdfgi_enabled = q >= Game.Quality.HIGH
+	# SDFGI and volumetric fog are expensive and misbehave on integrated
+	# graphics (washed-out, too bright surfaces), so only ULTRA uses them.
+	env.sdfgi_enabled = q == Game.Quality.ULTRA
 	env.sdfgi_use_occlusion = true
 	env.sdfgi_cascades = 4
 	env.sdfgi_min_cell_size = 0.1
@@ -98,12 +100,19 @@ func _apply_quality(q: int) -> void:
 	env.ssil_enabled = q == Game.Quality.ULTRA
 	env.ssr_enabled = q == Game.Quality.ULTRA
 	env.ssr_max_steps = 48
-	env.volumetric_fog_enabled = q >= Game.Quality.HIGH
-	env.ssao_enabled = true
-	sun.directional_shadow_max_distance = [70.0, 120.0, 180.0][q]
+	env.volumetric_fog_enabled = q == Game.Quality.ULTRA
+	env.ssao_enabled = q >= Game.Quality.MEDIUM
+	env.glow_enabled = q >= Game.Quality.MEDIUM
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if q == Game.Quality.LOW \
+		else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	sun.directional_shadow_max_distance = [35.0, 70.0, 120.0, 180.0][q]
+	sun.shadow_blur = 1.0 if q == Game.Quality.LOW else 1.2
+	# Sun-size soft shadows (PCSS) look noisy at low sample counts and cost a lot.
+	sun.light_angular_distance = 0.0 if q <= Game.Quality.MEDIUM else 0.5
 	RenderingServer.environment_set_ssao_quality(
-		[RenderingServer.ENV_SSAO_QUALITY_LOW, RenderingServer.ENV_SSAO_QUALITY_MEDIUM,
-		RenderingServer.ENV_SSAO_QUALITY_HIGH][q], true, 0.5, 2, 50.0, 300.0)
+		[RenderingServer.ENV_SSAO_QUALITY_VERY_LOW, RenderingServer.ENV_SSAO_QUALITY_LOW,
+		RenderingServer.ENV_SSAO_QUALITY_MEDIUM, RenderingServer.ENV_SSAO_QUALITY_HIGH][q], true, 0.5, 2, 50.0, 300.0)
+	(env.sky as Sky).radiance_size = Sky.RADIANCE_SIZE_64 if q == Game.Quality.LOW else Sky.RADIANCE_SIZE_256
 
 
 func set_time_of_day(t: float) -> void:

@@ -185,7 +185,7 @@ func _build_pause(root: Control) -> void:
 	box.add_child(cont)
 	_quality_btn = Button.new()
 	_quality_btn.pressed.connect(func() -> void:
-		Game.set_quality((Game.quality + 1) % 3)
+		Game.set_quality((Game.quality + 1) % Game.QUALITY_NAMES.size())
 		_quality_btn.text = "Графика: " + Game.QUALITY_NAMES[Game.quality])
 	_quality_btn.text = "Графика: " + Game.QUALITY_NAMES[Game.quality]
 	box.add_child(_quality_btn)
@@ -198,7 +198,7 @@ func _build_pause(root: Control) -> void:
 	quit.pressed.connect(func() -> void: get_tree().quit())
 	box.add_child(quit)
 	var help := Label.new()
-	help.text = "WASD — идти · Shift — бежать · Пробел — прыжок · C — красться\nE — действие · мышь — камера · колесо — приблизить"
+	help.text = "WASD — идти · Shift — бежать · Пробел — прыжок · C — красться\nE — действие · мышь — камера · колесо — приблизить · F3 — FPS"
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	help.add_theme_font_size_override("font_size", 16)
 	box.add_child(help)
@@ -247,6 +247,11 @@ func set_objective(text: String) -> void:
 	objective.text = text
 	var tw := create_tween()
 	tw.tween_property(objective_box, "modulate:a", 0.0 if text == "" else 1.0, 0.5)
+
+
+## Updates the objective text without the fade (for live counters).
+func set_objective_text(text: String) -> void:
+	objective.text = text
 
 
 func show_berries(on: bool) -> void:

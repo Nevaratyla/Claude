@@ -4,20 +4,23 @@ extends Node
 signal berries_changed(count: int)
 signal quality_changed(level: int)
 
-enum Quality { MEDIUM, HIGH, ULTRA }
+enum Quality { LOW, MEDIUM, HIGH, ULTRA }
 
-const QUALITY_NAMES := ["Средне", "Высоко", "Ультра"]
+const QUALITY_NAMES := ["Низко", "Средне", "Высоко", "Ультра"]
+const SETTINGS_PATH := "user://settings.cfg"
 
 var quality: int = Quality.HIGH
 var berries: int = 0
 var flags := {}
 
 var noise_texture: ImageTexture
+var _fps_label: Label
 
 
 func _enter_tree() -> void:
 	_setup_input()
 	_build_noise_texture()
+	quality = _load_quality()
 
 
 func add_berries(n: int) -> void:
@@ -25,17 +28,61 @@ func add_berries(n: int) -> void:
 	berries_changed.emit(berries)
 
 
+## First launch: integrated GPUs (Intel/AMD APU in laptops) start on LOW,
+## discrete cards on HIGH. After that the choice from the pause menu is kept.
+func _load_quality() -> int:
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) == OK and cfg.has_section_key("video", "quality"):
+		return clampi(int(cfg.get_value("video", "quality")), Quality.LOW, Quality.ULTRA)
+	var t := RenderingServer.get_video_adapter_type()
+	if t == RenderingDevice.DEVICE_TYPE_DISCRETE_GPU:
+		return Quality.HIGH
+	return Quality.LOW
+
+
 func set_quality(level: int) -> void:
-	quality = clampi(level, Quality.MEDIUM, Quality.ULTRA)
-	var shadow_size: int = [2048, 4096, 8192][quality]
-	RenderingServer.directional_shadow_atlas_set_size(shadow_size, true)
+	quality = clampi(level, Quality.LOW, Quality.ULTRA)
+	var cfg := ConfigFile.new()
+	cfg.load(SETTINGS_PATH)
+	cfg.set_value("video", "quality", quality)
+	cfg.save(SETTINGS_PATH)
+	RenderingServer.directional_shadow_atlas_set_size([2048, 2048, 4096, 8192][quality], true)
 	RenderingServer.directional_soft_shadow_filter_set_quality(
-		[RenderingServer.SHADOW_QUALITY_SOFT_LOW, RenderingServer.SHADOW_QUALITY_SOFT_MEDIUM,
-		RenderingServer.SHADOW_QUALITY_SOFT_HIGH][quality])
-	get_viewport().scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR2 if quality == Quality.MEDIUM else Viewport.SCALING_3D_MODE_BILINEAR
-	get_viewport().scaling_3d_scale = 0.75 if quality == Quality.MEDIUM else 1.0
-	get_viewport().use_taa = quality != Quality.MEDIUM
+		[RenderingServer.SHADOW_QUALITY_HARD, RenderingServer.SHADOW_QUALITY_SOFT_VERY_LOW,
+		RenderingServer.SHADOW_QUALITY_SOFT_LOW, RenderingServer.SHADOW_QUALITY_SOFT_HIGH][quality])
+	var vp := get_viewport()
+	# FSR 1 is a cheap upscaler that works well on integrated graphics.
+	vp.scaling_3d_mode = Viewport.SCALING_3D_MODE_FSR if quality <= Quality.MEDIUM else Viewport.SCALING_3D_MODE_BILINEAR
+	vp.scaling_3d_scale = [0.77, 0.87, 1.0, 1.0][quality]
+	vp.fsr_sharpness = 0.4
+	vp.use_taa = quality >= Quality.HIGH
+	vp.screen_space_aa = Viewport.SCREEN_SPACE_AA_FXAA if quality <= Quality.MEDIUM else Viewport.SCREEN_SPACE_AA_DISABLED
+	vp.mesh_lod_threshold = [4.0, 2.0, 1.0, 1.0][quality]
 	quality_changed.emit(quality)
+
+
+## F3: frame-rate counter, to check how the game runs on your machine.
+func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.physical_keycode == KEY_F3:
+		if _fps_label == null:
+			var layer := CanvasLayer.new()
+			layer.layer = 20
+			add_child(layer)
+			_fps_label = Label.new()
+			_fps_label.position = Vector2(12, 1040)
+			_fps_label.add_theme_font_size_override("font_size", 18)
+			_fps_label.add_theme_constant_override("outline_size", 4)
+			_fps_label.add_theme_color_override("font_outline_color", Color.BLACK)
+			layer.add_child(_fps_label)
+			_fps_label.visible = false
+		_fps_label.visible = not _fps_label.visible
+
+
+func _process(_delta: float) -> void:
+	if _fps_label and _fps_label.visible:
+		_fps_label.text = "%d FPS · %s · %s" % [Engine.get_frames_per_second(), QUALITY_NAMES[quality],
+			RenderingServer.get_video_adapter_name()]
+		_fps_label.position.y = get_viewport().get_visible_rect().size.y - 34
 
 
 func _setup_input() -> void:

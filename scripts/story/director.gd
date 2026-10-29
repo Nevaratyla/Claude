@@ -1,10 +1,11 @@
 class_name Director
 extends Node
 ## Story flow. Stage 1: arrival in the closed dacha village, raspberries for
-## granny, walking deeper down the street until a car is heard (stage 2 hook).
+## granny, a few more steps down the street until a car is heard (stage 2 hook).
 
 const BERRIES_NEEDED := 10
-const STAGE1_END_Z := -340.0
+## After the last berry the next event is only this far ahead (a few seconds).
+const NEXT_EVENT_DIST := 10.0
 
 var hud: Hud
 var player: Player
@@ -16,6 +17,7 @@ var _berry_quest := false
 var _berry_done := false
 var _said := {}
 var _ended := false
+var _goal_z := INF
 
 
 func start(skip_intro := false) -> void:
@@ -50,12 +52,16 @@ func _process(_delta: float) -> void:
 		var first := pickups[0]
 		if is_instance_valid(first) and player.global_position.distance_to(first.global_position) < 6.0:
 			_start_berry_quest()
-	_line_at(z < -70.0, "rowan", "Фиалка", "Смотри, рябина какая рыжая… Осень скоро.")
-	_line_at(z < -150.0, "quiet", "Бусик", "Тихо как… Даже собаки не лают.")
-	_line_at(z < -230.0, "fences", "Фиалка", "Заборы тут какие высоченные. Мы как муравьи.")
-	if z < STAGE1_END_Z and not _ended:
-		_ended = true
-		_stage_end()
+	_line_at(z < -30.0, "rowan", "Фиалка", "Смотри, рябина какая рыжая… Осень скоро.")
+	_line_at(z < -60.0, "quiet", "Бусик", "Тихо как… Даже собаки не лают.")
+	_line_at(z < -95.0, "fences", "Фиалка", "Заборы тут какие высоченные. Мы как муравьи.")
+	if _goal_z != INF and not _ended:
+		var left := z - _goal_z
+		if left <= 0.0:
+			_ended = true
+			_stage_end()
+		else:
+			hud.set_objective_text("Иди дальше по улице — ещё %d м" % ceili(left))
 
 
 func _line_at(cond: bool, id: String, who: String, text: String) -> void:
@@ -106,8 +112,9 @@ func _on_berries(n: int) -> void:
 			hud.say("Фиалка", "Слышишь? Будто мотор вдалеке… А, показалось.")
 	if n >= BERRIES_NEEDED:
 		_berry_done = true
-		await hud.say("Фиалка", "Целая горсть! Бабушка испечёт пирог. Теперь — к ней.")
-		hud.set_objective("Дойди до конца улицы. Держись поближе к заборам")
+		_goal_z = player.global_position.z - NEXT_EVENT_DIST
+		hud.set_objective("Иди дальше по улице — ещё %d м" % int(NEXT_EVENT_DIST))
+		await hud.say("Фиалка", "Целая горсть! Бабушка испечёт пирог. Пошли дальше!")
 
 
 func _stage_end() -> void:

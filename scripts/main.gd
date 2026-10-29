@@ -131,4 +131,39 @@ func _autoshot() -> void:
 			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
 			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME),
 			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)])
+	await _test_quest()
 	get_tree().quit()
+
+
+## Walks the berry quest: teleports to pickups, picks them, then steps forward
+## and checks that the next event fires. Prints PASS/FAIL lines.
+func _test_quest() -> void:
+	print("[test] quality=%s pickups=%d" % [Game.QUALITY_NAMES[Game.quality], director.pickups.size()])
+	var picked := 0
+	for b in director.pickups:
+		if picked >= Director.BERRIES_NEEDED:
+			break
+		player.global_position = b.global_position + Vector3(0.3 * -signf(b.global_position.x), 0.05, 0)
+		for i in 3:
+			await get_tree().physics_frame
+		if player.focus == b:
+			player.interacted.emit(b)
+			picked += 1
+		else:
+			print("[test] FAIL: pickup at %s not in reach" % b.global_position)
+	print("[test] berries=%d %s" % [Game.berries, "PASS" if Game.berries >= Director.BERRIES_NEEDED else "FAIL"])
+	await get_tree().create_timer(4.0).timeout
+	var last_z := player.global_position.z
+	print("[test] goal %.1f m ahead of last berry %s" % [last_z - director._goal_z,
+		"PASS" if last_z - director._goal_z <= 12.0 else "FAIL"])
+	player.global_position = Vector3(0.0, 0.05, director._goal_z - 0.5)
+	# process_frame fires before nodes' _process, so give the Director a few frames.
+	for i in 4:
+		await get_tree().process_frame
+	print("[test] next event fired: %s (z=%.1f goal=%.1f)" % ["PASS" if director._ended else "FAIL",
+		player.global_position.z, director._goal_z])
+	var furthest := 0.0
+	for b in director.pickups:
+		if is_instance_valid(b):
+			furthest = minf(furthest, b.global_position.z)
+	print("[test] berry area length %.0f m" % -furthest)

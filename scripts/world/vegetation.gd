@@ -41,6 +41,10 @@ var _leaf_mats := {}
 var multimesh_count := 0
 var tree_count := 0
 var berry_spots: Array[Vector3] = []
+var _grass_mmis: Array[MultiMeshInstance3D] = []
+var _grass_mats: Array[ShaderMaterial] = []
+var _near_leaves: Array[MultiMeshInstance3D] = []
+var _far_leaves: Array[MultiMeshInstance3D] = []
 var _lumps: Array = []
 
 
@@ -81,6 +85,28 @@ func build(street: Street) -> void:
 	_place(street)
 	_commit_trees()
 	_grass(street)
+	Game.quality_changed.connect(_apply_quality)
+	_apply_quality(Game.quality)
+
+
+## Cheaper vegetation on weak GPUs: grass drawn closer and at half density,
+## detailed crowns switch to the light LOD sooner, far crowns cast no shadows.
+func _apply_quality(q: int) -> void:
+	var grass_end: float = [22.0, 32.0, 46.0, 46.0][q]
+	var density: float = [0.5, 0.75, 1.0, 1.0][q]
+	for mat: ShaderMaterial in _grass_mats:
+		mat.set_shader_parameter("fade_start", grass_end - 10.0)
+		mat.set_shader_parameter("fade_end", grass_end - 2.0)
+	for mmi: MultiMeshInstance3D in _grass_mmis:
+		mmi.visibility_range_end = grass_end
+		mmi.multimesh.visible_instance_count = int(mmi.multimesh.instance_count * density)
+	var lod: float = [60.0, 100.0, LOD_DIST, LOD_DIST][q]
+	for mmi: MultiMeshInstance3D in _near_leaves:
+		mmi.visibility_range_end = lod
+	for mmi: MultiMeshInstance3D in _far_leaves:
+		mmi.visibility_range_begin = lod
+		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if q == Game.Quality.LOW \
+			else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
 
 
 # ------------------------------------------------------------------ species
@@ -272,12 +298,13 @@ func _place(street: Street) -> void:
 				_add("raspberry", Vector3(s * (fx + rng.randf_range(0.5, 1.6)), 0, lerpf(z0, z1, rng.randf_range(0.6, 0.95)) - i * 0.6), rng.randf_range(0.9, 1.2))
 	# Raspberry canes growing through the fences onto the verge; the berries
 	# hanging on them are the stage-1 collectibles (see Director).
-	var bz := -10.0
-	while bz > -330.0:
+	# Tight cluster near the start so the berry quest takes a couple of minutes.
+	var bz := -8.0
+	while bz > -125.0:
 		var bside := -1 if rng.randf() < 0.5 else 1
 		_add("raspberry", Vector3(bside * (fx - 0.35), 0, bz), rng.randf_range(0.65, 0.85))
 		berry_spots.append(Vector3(bside * (fx - 0.55), 0, bz + rng.randf_range(-0.3, 0.3)))
-		bz -= rng.randf_range(11.0, 22.0)
+		bz -= rng.randf_range(6.0, 10.0)
 	# Copse behind the entrance gate, where the heroes come from.
 	for i in 90:
 		var x := rng.randf_range(-45.0, 45.0)
@@ -312,10 +339,12 @@ func _commit_trees() -> void:
 			mmi.multimesh = mm
 			mmi.material_override = m.bark if part == "trunk" else _leaf_mats[sp]
 			if part == "leaves":
+				_near_leaves.append(mmi)
 				mmi.visibility_range_end = LOD_DIST
 				mmi.visibility_range_end_margin = 20.0
 				mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 			elif part == "leaves_far":
+				_far_leaves.append(mmi)
 				mmi.visibility_range_begin = LOD_DIST
 				mmi.visibility_range_begin_margin = 20.0
 				mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
@@ -384,6 +413,8 @@ func _grass(street: Street) -> void:
 	var fmat := ShaderMaterial.new()
 	fmat.shader = GRASS
 	fmat.set_shader_parameter("flower_mode", true)
+	_grass_mats.append(mat)
+	_grass_mats.append(fmat)
 	var clump := _grass_clump_mesh(9, 0.32)
 	var tall := _grass_clump_mesh(6, 0.75)
 	var flower := _flower_mesh()
@@ -437,4 +468,5 @@ func _grass_chunk(mesh: Mesh, items: Array, mat: Material, nm: String) -> void:
 	mmi.visibility_range_end = 46.0
 	mmi.visibility_range_end_margin = 4.0
 	add_child(mmi)
+	_grass_mmis.append(mmi)
 	multimesh_count += 1
