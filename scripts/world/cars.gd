@@ -71,6 +71,10 @@ func _make_materials() -> void:
 	plate.albedo_color = Color(0.92, 0.92, 0.9)
 	plate.roughness = 0.5
 	_mats["plate"] = plate
+	var interior := StandardMaterial3D.new()
+	interior.albedo_color = Color(0.05, 0.05, 0.055)
+	interior.roughness = 0.9
+	_mats["interior"] = interior
 	var lf_on := StandardMaterial3D.new()
 	lf_on.albedo_color = Color(1, 1, 0.95)
 	lf_on.emission_enabled = true

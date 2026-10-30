@@ -98,16 +98,17 @@ def birds(sec, density=0.6):
 
 
 def ambient_day():
-    sec = 24.0
+    # Long loop so it does not feel repetitive: gentle wind, a few distant birds.
+    sec = 75.0
     x = wind(sec + 0.5) * 0.9
     b = np.zeros_like(x)
-    b[:int(sec * SR)] += birds(sec, 0.7)
-    x = x + b * 0.18
+    b[:int(sec * SR)] += birds(sec, 0.22)
+    x = x + lowpass(b, 6000) * 0.1
     save("ambient_day", seamless(x, 0.5), 0.6)
 
 
 def ambient_evening():
-    sec = 20.0
+    sec = 45.0
     n = int((sec + 0.5) * SR)
     t = np.arange(n) / SR
     x = wind(sec + 0.5, 0.6)
@@ -117,7 +118,7 @@ def ambient_evening():
         rate = rng.uniform(2.5, 4.0)
         gate = (np.sin(2 * np.pi * rate * t + rng.uniform(0, 6)) > 0.4).astype(float)
         trill = 0.5 + 0.5 * np.sign(np.sin(2 * np.pi * 30 * t))
-        x += np.sin(2 * np.pi * f * t) * lowpass(gate * trill, 300) * rng.uniform(0.04, 0.09)
+        x += np.sin(2 * np.pi * f * t) * lowpass(gate * trill, 300) * rng.uniform(0.02, 0.045)
     save("ambient_evening", seamless(x, 0.5), 0.55)
 
 
@@ -147,24 +148,26 @@ def door():
 
 def alien_voice():
     # Low warbling murmur with formant-like resonances: not quite speech.
-    sec = 2.6
-    t = t_axis(sec)
-    f = 95 + 25 * np.sin(2 * np.pi * 0.7 * t) + 12 * np.sin(2 * np.pi * 5.3 * t)
-    ph = 2 * np.pi * np.cumsum(f) / SR
-    src = signal.sawtooth(ph)
-    syll = 0.5 + 0.5 * np.sin(2 * np.pi * 3.1 * t + np.sin(2 * np.pi * 0.9 * t) * 2)
-    y = np.zeros_like(t)
-    for lo, hi, g in [(250, 450, 1.0), (900, 1300, 0.6), (2200, 2800, 0.25)]:
-        y += bandpass(src, lo, hi) * g
-    y *= syll * env(len(t), 0.1, 0.5)
-    # Ring-modulated shimmer on top makes it uncanny.
-    y += y * np.sin(2 * np.pi * 37 * t) * 0.6
-    # Cheap reverb: a few decaying echoes.
-    out = np.copy(y)
-    for d, g in [(0.07, 0.4), (0.13, 0.3), (0.21, 0.2), (0.33, 0.12)]:
-        k = int(d * SR)
-        out[k:] += y[:-k] * g
-    save("alien_voice", out, 0.7)
+    # Several phrases of different length and contour for the dialogue.
+    for k, (sec, base, rate) in enumerate([(2.6, 95, 3.1), (1.6, 110, 3.8), (2.2, 85, 2.6), (1.2, 120, 4.4)]):
+        t = t_axis(sec)
+        f = base + 25 * np.sin(2 * np.pi * 0.7 * t + k) + 12 * np.sin(2 * np.pi * 5.3 * t)
+        if k == 1:
+            f = f * (1 + 0.25 * t / sec)        # rising: a question
+        ph = 2 * np.pi * np.cumsum(f) / SR
+        src = signal.sawtooth(ph)
+        syll = 0.5 + 0.5 * np.sin(2 * np.pi * rate * t + np.sin(2 * np.pi * 0.9 * t) * 2)
+        y = np.zeros_like(t)
+        for lo, hi, g in [(250, 450, 1.0), (900, 1300, 0.6), (2200, 2800, 0.25)]:
+            y += bandpass(src, lo, hi) * g
+        y *= syll * env(len(t), 0.08, 0.4)
+        # Ring-modulated shimmer on top makes it uncanny.
+        y += y * np.sin(2 * np.pi * (31 + k * 6) * t) * 0.6
+        out = np.copy(y)
+        for d, g in [(0.07, 0.4), (0.13, 0.3), (0.21, 0.2), (0.33, 0.12)]:
+            n = int(d * SR)
+            out[n:] += y[:-n] * g
+        save(f"alien_voice{k}", out, 0.7)
 
 
 def heartbeat():
@@ -208,10 +211,12 @@ def leaf():
 
 
 def steps():
+    # Soft paw pats: low, short, gentle (they play often, so they must not tick).
     for k in range(3):
-        t = t_axis(0.14)
-        x = lowpass(rng.standard_normal(len(t)), rng.uniform(1200, 2000)) * np.exp(-t * rng.uniform(35, 55))
-        save(f"step{k}", x, 0.5)
+        t = t_axis(0.11)
+        x = lowpass(rng.standard_normal(len(t)), rng.uniform(450, 700), 3) * np.exp(-t * rng.uniform(40, 60))
+        x *= env(len(t), 0.004, 0.06)
+        save(f"step{k}", x, 0.35)
 
 
 def tires():

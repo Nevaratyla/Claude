@@ -16,11 +16,44 @@ var flags := {}
 var noise_texture: ImageTexture
 var _fps_label: Label
 
+## Player options (pause menu). Saved next to the quality preset.
+signal settings_changed
+var lod_saver := false          # shorter draw distances for very weak PCs (visible pop-in)
+var first_person := false
+var vol_ambient := 0.7
+var vol_sfx := 0.8
+var mouse_sens := 1.0
+
 
 func _enter_tree() -> void:
 	_setup_input()
 	_build_noise_texture()
 	quality = _load_quality()
+	var cfg := ConfigFile.new()
+	if cfg.load(SETTINGS_PATH) == OK:
+		lod_saver = cfg.get_value("video", "lod_saver", lod_saver)
+		first_person = cfg.get_value("game", "first_person", first_person)
+		vol_ambient = cfg.get_value("audio", "ambient", vol_ambient)
+		vol_sfx = cfg.get_value("audio", "sfx", vol_sfx)
+		mouse_sens = cfg.get_value("game", "mouse_sens", mouse_sens)
+
+
+func set_option(key: String, value: Variant) -> void:
+	set(key, value)
+	save_settings()
+	settings_changed.emit()
+
+
+func save_settings() -> void:
+	var cfg := ConfigFile.new()
+	cfg.load(SETTINGS_PATH)
+	cfg.set_value("video", "quality", quality)
+	cfg.set_value("video", "lod_saver", lod_saver)
+	cfg.set_value("game", "first_person", first_person)
+	cfg.set_value("audio", "ambient", vol_ambient)
+	cfg.set_value("audio", "sfx", vol_sfx)
+	cfg.set_value("game", "mouse_sens", mouse_sens)
+	cfg.save(SETTINGS_PATH)
 
 
 func add_leaves(n: int) -> void:
@@ -42,10 +75,7 @@ func _load_quality() -> int:
 
 func set_quality(level: int) -> void:
 	quality = clampi(level, Quality.LOW, Quality.ULTRA)
-	var cfg := ConfigFile.new()
-	cfg.load(SETTINGS_PATH)
-	cfg.set_value("video", "quality", quality)
-	cfg.save(SETTINGS_PATH)
+	save_settings()
 	RenderingServer.directional_shadow_atlas_set_size([2048, 2048, 4096, 8192][quality], true)
 	RenderingServer.directional_soft_shadow_filter_set_quality(
 		[RenderingServer.SHADOW_QUALITY_HARD, RenderingServer.SHADOW_QUALITY_SOFT_VERY_LOW,
@@ -97,6 +127,7 @@ func _setup_input() -> void:
 		"crouch": [KEY_C, KEY_CTRL],
 		"pause": [KEY_ESCAPE],
 		"fullscreen": [KEY_F11],
+		"camera_mode": [KEY_V],
 	}
 	for action: String in keys:
 		if not InputMap.has_action(action):

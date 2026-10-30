@@ -26,6 +26,7 @@ var _length := 4.2
 var _engine: AudioStreamPlayer3D
 var _tires: AudioStreamPlayer3D
 var _body: AnimatableBody3D
+var _doors := {}                 # "L" (driver, local -Z) / "R" -> Node3D hinged at the front edge
 
 
 ## Call after the node is in the tree.
@@ -44,6 +45,8 @@ func setup(cars: Cars, model: String, paint: Color, start: Vector3) -> void:
 		if String(mi.name).begins_with("Wheel"):
 			_wheels.append(mi)
 			_wheel_r = mi.get_aabb().size.y * 0.5
+		elif String(mi.name).begins_with("Door_"):
+			_doors[String(mi.name).substr(5, 1)] = mi
 	_length = aabb.size.x
 	# Moving collision so the heroes cannot walk through it (and it shields them).
 	_body = AnimatableBody3D.new()
@@ -68,6 +71,35 @@ func setup(cars: Cars, model: String, paint: Color, start: Vector3) -> void:
 		add_child(l)
 	_engine = Audio.attach_loop("engine_loop", self, -2.0, 7.0)
 	_tires = Audio.attach_loop("tires_loop", self, -40.0, 5.0)
+
+
+## Swing a front door open or shut. "L" is the driver's side.
+func set_door(side: String, open: bool) -> void:
+	var d: Node3D = _doors.get(side)
+	if d == null:
+		return
+	var angle := (-1.15 if side == "L" else 1.15) if open else 0.0
+	var tw := create_tween()
+	tw.tween_property(d, "rotation:y", angle, 0.55 if open else 0.35).set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_OUT)
+	if open:
+		Audio.play_at("door", d.global_position, -10.0, 1.6)
+	else:
+		tw.tween_callback(func() -> void: Audio.play_at("door", d.global_position, 0.0))
+
+
+## Seat inside the car behind a front door, and the spot on the ground just outside it.
+func seat_point(side: String) -> Vector3:
+	var d: Node3D = _doors.get(side)
+	var hinge := to_local(d.global_position) if d else Vector3(0.3, 0, 0)
+	var z := -0.35 if side == "L" else 0.35
+	return to_global(Vector3(hinge.x - 0.55, 0.0, z))
+
+
+func outside_point(side: String) -> Vector3:
+	var d: Node3D = _doors.get(side)
+	var hinge := to_local(d.global_position) if d else Vector3(0.3, 0, 0)
+	var z := -1.35 if side == "L" else 1.35
+	return to_global(Vector3(hinge.x - 0.75, 0.0, z))
 
 
 func collision_rid() -> RID:

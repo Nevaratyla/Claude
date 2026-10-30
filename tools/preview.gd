@@ -60,6 +60,7 @@ func _run() -> void:
 		["busik_face", Vector3(-0.22, 0.33, 0.42), Vector3(-0.22, 0.29, 0)],
 		["cars", Vector3(0, 2.2, 6.0), Vector3(0, 0.8, -6)],
 		["alien", Vector3(0.9, 1.3, 1.3), Vector3(1.6, 1.1, -1.2)],
+		["alien_face", Vector3(1.25, 1.72, -0.55), Vector3(1.6, 1.68, -1.2)],
 		["alien_low", Vector3(0.2, 0.25, 0.6), Vector3(1.6, 1.4, -1.2)],
 	]
 	for s in shots:

@@ -12,11 +12,26 @@ var _amb_index := 0
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
+	# Two buses so the player can set ambience and effects separately.
+	for bus in ["Ambient", "SFX"]:
+		if AudioServer.get_bus_index(bus) == -1:
+			AudioServer.add_bus()
+			var i := AudioServer.bus_count - 1
+			AudioServer.set_bus_name(i, bus)
+			AudioServer.set_bus_send(i, "Master")
 	for i in 2:
 		var p := AudioStreamPlayer.new()
 		p.volume_db = -80.0
+		p.bus = "Ambient"
 		add_child(p)
 		_ambient.append(p)
+	Game.settings_changed.connect(_apply_volumes)
+	_apply_volumes()
+
+
+func _apply_volumes() -> void:
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("Ambient"), linear_to_db(maxf(Game.vol_ambient, 0.0001)))
+	AudioServer.set_bus_volume_db(AudioServer.get_bus_index("SFX"), linear_to_db(maxf(Game.vol_sfx, 0.0001)))
 
 
 ## Cached stream; looping clips are set to loop over their whole length.
@@ -51,6 +66,7 @@ func play(sound: String, volume_db := 0.0, pitch := 1.0) -> AudioStreamPlayer:
 	p.stream = stream(sound)
 	p.volume_db = volume_db
 	p.pitch_scale = pitch
+	p.bus = "SFX"
 	add_child(p)
 	p.play()
 	if not sound in LOOPED:
@@ -65,6 +81,7 @@ func play_at(sound: String, pos: Vector3, volume_db := 0.0, pitch := 1.0, unit_s
 	p.volume_db = volume_db
 	p.pitch_scale = pitch
 	p.unit_size = unit_size
+	p.bus = "SFX"
 	p.max_distance = 60.0
 	add_child(p)
 	p.global_position = pos
@@ -78,6 +95,7 @@ func attach_loop(sound: String, parent: Node3D, volume_db := 0.0, unit_size := 6
 	p.stream = stream(sound)
 	p.volume_db = volume_db
 	p.unit_size = unit_size
+	p.bus = "SFX"
 	p.max_distance = 140.0
 	parent.add_child(p)
 	p.play()

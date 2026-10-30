@@ -11,6 +11,7 @@ var force_crouch := false       # cutscenes and automated tests
 
 func _ready() -> void:
 	_init_body(preload("res://assets/characters/busik.glb"), Color(0.12, 0.35, 0.85), Color(0.16, 0.36, 0.93))
+	creature.footsteps = true
 
 
 func _physics_process(delta: float) -> void:
@@ -23,7 +24,13 @@ func _physics_process(delta: float) -> void:
 		if Input.is_action_just_pressed("jump"):
 			wants_jump = true
 	super(delta)
+	if camera_rig and camera_rig.first_person:
+		rotation.y = camera_rig.yaw
 	_update_focus()
+
+
+func set_first_person(on: bool) -> void:
+	creature.set_body_visible(not on)
 
 
 func _update_focus() -> void:
@@ -44,3 +51,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("interact") and focus and not frozen:
 		interacted.emit(focus)
 		get_viewport().set_input_as_handled()
+
+
+func _face_camera() -> bool:
+	return camera_rig != null and camera_rig.first_person

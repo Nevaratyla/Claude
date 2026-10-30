@@ -28,6 +28,12 @@ const SPECIES := {
 		"tile": 4, "leaf": Color(0.13, 0.25, 0.1), "autumn": 0.0, "bark": 9, "branches": 0, "flex": 0.12},
 	"spruce": {"h": 11.0, "trunk_r": 0.2, "crown": "cone", "cr": 2.6, "cbase": 0.08, "cards": 900, "card": 1.3,
 		"tile": 2, "leaf": Color(0.1, 0.2, 0.12), "autumn": 0.0, "bark": 9, "branches": 0, "flex": 0.15},
+	"tomato": {"h": 1.3, "trunk_r": 0.015, "crown": "col", "cr": 0.3, "cbase": 0.1, "cards": 70, "card": 0.35,
+		"tile": 5, "leaf": Color(0.2, 0.34, 0.1), "autumn": 0.0, "bark": 9, "branches": 3, "flex": 0.2},
+	"cucumber": {"h": 1.6, "trunk_r": 0.01, "crown": "col", "cr": 0.25, "cbase": 0.05, "cards": 80, "card": 0.4,
+		"tile": 0, "leaf": Color(0.22, 0.38, 0.1), "autumn": 0.0, "bark": 9, "branches": 2, "flex": 0.2},
+	"potato": {"h": 0.5, "trunk_r": 0.01, "crown": "ell", "cr": 0.3, "cbase": 0.1, "cards": 40, "card": 0.25,
+		"tile": 0, "leaf": Color(0.2, 0.33, 0.1), "autumn": 0.03, "bark": 9, "branches": 3, "flex": 0.3},
 	"lilac": {"h": 2.4, "trunk_r": 0.04, "crown": "ell", "cr": 1.3, "cbase": 0.12, "cards": 200, "card": 0.7,
 		"tile": 0, "leaf": Color(0.2, 0.33, 0.12), "autumn": 0.05, "bark": 9, "branches": 5, "flex": 0.3},
 }
@@ -44,7 +50,17 @@ var _grass_mmis: Array[MultiMeshInstance3D] = []
 var _grass_mats: Array[ShaderMaterial] = []
 var _near_leaves: Array[MultiMeshInstance3D] = []
 var _far_leaves: Array[MultiMeshInstance3D] = []
+var _cover: Array = []                       # [MultiMeshInstance3D, full draw distance]
 var _lumps: Array = []
+
+
+func _clear_of_garden(p: Dictionary, pos: Vector3, r: float) -> bool:
+	if p.has("greenhouse") and Vector2(pos.x - p.greenhouse[0].x, pos.z - p.greenhouse[0].z).length() < p.greenhouse[1] * 0.5 + 1.5 + r:
+		return false
+	for b: Array in p.get("beds", []):
+		if Vector2(pos.x - b[0].x, pos.z - b[0].z).length() < b[1] * 0.5 + r:
+			return false
+	return true
 
 
 func _rand_unit() -> Vector3:
@@ -86,27 +102,31 @@ func build(street: Street) -> void:
 	_grass(street)
 	_ground_cover(street)
 	Game.quality_changed.connect(_apply_quality)
-	_apply_quality(Game.quality)
+	Game.settings_changed.connect(_apply_quality)
+	_apply_quality()
 
 
-## Cheaper vegetation on weak GPUs: grass drawn closer and at half density,
-## detailed crowns switch to the light LOD sooner, far crowns cast no shadows.
-func _apply_quality(q: int) -> void:
-	var grass_end: float = [22.0, 32.0, 46.0, 46.0][q]
-	var density: float = [0.5, 0.75, 1.0, 1.0][q]
+## Draw distances stay full by default, so nothing pops in near the camera.
+## Only the "Экономная дальность" option (for very weak PCs) shortens them:
+## grass closer and at half density, crowns switch to the light LOD sooner.
+func _apply_quality(_q := 0) -> void:
+	var saver := Game.lod_saver
+	var grass_end := 24.0 if saver else 46.0
 	for mat: ShaderMaterial in _grass_mats:
-		mat.set_shader_parameter("fade_start", grass_end - 10.0)
+		mat.set_shader_parameter("fade_start", grass_end - 12.0)
 		mat.set_shader_parameter("fade_end", grass_end - 2.0)
 	for mmi: MultiMeshInstance3D in _grass_mmis:
 		mmi.visibility_range_end = grass_end
-		mmi.multimesh.visible_instance_count = int(mmi.multimesh.instance_count * density)
-	var lod: float = [60.0, 100.0, LOD_DIST, LOD_DIST][q]
+		mmi.multimesh.visible_instance_count = int(mmi.multimesh.instance_count * (0.5 if saver else 1.0))
+	var lod := 70.0 if saver else LOD_DIST
 	for mmi: MultiMeshInstance3D in _near_leaves:
 		mmi.visibility_range_end = lod
 	for mmi: MultiMeshInstance3D in _far_leaves:
 		mmi.visibility_range_begin = lod
-		mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if q == Game.Quality.LOW \
-			else GeometryInstance3D.SHADOW_CASTING_SETTING_ON
+	for item: Array in _cover:
+		var mmi: MultiMeshInstance3D = item[0]
+		mmi.visibility_range_end = float(item[1]) * (0.5 if saver else 1.0)
+		mmi.visibility_range_end_margin = mmi.visibility_range_end * 0.15
 
 
 # ------------------------------------------------------------------ species
@@ -285,13 +305,36 @@ func _place(street: Street) -> void:
 		for i in rng.randi_range(0, 3):
 			var pos := Vector3(s * (fx + rng.randf_range(0.8, 2.5)), 0, lerpf(z0, z1, rng.randf()))
 			_add("lilac", pos, rng.randf_range(0.8, 1.3))
-		# Garden trees.
-		var trees := rng.randi_range(1, 5)
-		for i in trees:
+		# Garden trees: every plot gets at least two, retrying until they fit.
+		var trees := rng.randi_range(2, 5)
+		var planted := 0
+		for attempt in 16:
+			if planted >= trees:
+				break
 			var pos := Vector3(s * (fx + rng.randf_range(3.0, Street.PLOT_DEPTH - 1.5)), 0, lerpf(z0 - 1.0, z1 + 1.0, rng.randf()))
 			var sp: String = ["apple", "apple", "rowan", "birch", "maple", "spruce"][rng.randi_range(0, 5)]
-			if free.call(pos, 2.0):
+			if free.call(pos, 2.0) and _clear_of_garden(p, pos, 2.0):
 				_add(sp, pos, rng.randf_range(0.8, 1.2))
+				planted += 1
+		# Tomatoes and cucumbers in the greenhouse, potatoes on the beds.
+		if p.has("greenhouse"):
+			var gc: Vector3 = p.greenhouse[0]
+			var gl: float = p.greenhouse[1]
+			for row: float in [-0.6, 0.6]:
+				var x := -gl * 0.5 + 0.4
+				while x < gl * 0.5 - 0.3:
+					_add("tomato" if row < 0.0 else "cucumber", gc + Vector3(x, 0, row), rng.randf_range(0.85, 1.1))
+					x += 0.45
+		for b: Array in p.get("beds", []):
+			var bc: Vector3 = b[0]
+			var bl: float = b[1]
+			var bw: float = b[2]
+			for row in 2:
+				var rz := (row - 0.5) * bw * 0.5
+				var x := -bl * 0.5 + 0.3
+				while x < bl * 0.5 - 0.2:
+					_add("potato", bc + Vector3(x, 0.12, rz), rng.randf_range(0.8, 1.2))
+					x += 0.4
 	# Burdocks on the verge are the stage-1 collectibles (see Director): a dense
 	# run near the start, more than needed, so missing a few is no problem.
 	var bz := -6.0
@@ -536,10 +579,10 @@ func _ground_cover(street: Street) -> void:
 				stone[rng.randi_range(0, 2)].append([Transform3D(b, Vector3(x, y - size * 0.25, zz)),
 					Color(g, g * 0.97, g * 0.92)])
 		for i in 4:
-			_cover_mm(burdocks[i], burd[i], null, "burdock%d_%d" % [i, int(-z)], 90.0, true)
-		_cover_mm(plantain, plant, null, "plantain_%d" % int(-z), 35.0, false)
+			_cover_mm(burdocks[i], burd[i], null, "burdock%d_%d" % [i, int(-z)], 120.0, true)
+		_cover_mm(plantain, plant, null, "plantain_%d" % int(-z), 60.0, false)
 		for i in 3:
-			_cover_mm(stones[i], stone[i], stone_mat, "stones%d_%d" % [i, int(-z)], 32.0, false)
+			_cover_mm(stones[i], stone[i], stone_mat, "stones%d_%d" % [i, int(-z)], 50.0, false)
 		z = z1
 
 
@@ -568,6 +611,7 @@ func _cover_mm(mesh: Mesh, items: Array, mat: Material, nm: String, vis_end: flo
 	mmi.visibility_range_end_margin = vis_end * 0.1
 	mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
 	add_child(mmi)
+	_cover.append([mmi, vis_end])
 	multimesh_count += 1
 
 

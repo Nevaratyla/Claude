@@ -15,6 +15,7 @@ const HIDE_X := -2.55            # parked car centre, its far side is the hiding
 var hud: Hud
 var player: Player
 var friend: Friend
+var rig: CameraRig
 var street: Street
 var cars: Cars
 
@@ -35,6 +36,7 @@ var _marker_mat: StandardMaterial3D
 var _heart: AudioStreamPlayer
 var _t := 0.0
 var _patrols_left := 0
+var _hint_shown := false
 
 
 func begin(at_z: float) -> void:
@@ -87,6 +89,7 @@ func _run() -> void:
 	Audio.play("sting", -4.0)
 	hud.set_objective("Спрячься за машиной у забора!  C — пригнуться")
 	hud.say("Фиалка", "Слышишь? Машина едет! Быстро за ту серую машину, к забору!")
+	friend.hold = true
 	friend.go_to(hide_spot + Vector3(0.0, 0.0, -1.0), true, func() -> void: friend.scripted_crouch = true)
 
 	var lead := _spawn_car("crossover", Color(0.06, 0.06, 0.07), hide_z - 105.0)
@@ -97,21 +100,26 @@ func _run() -> void:
 	if not _alive(id):
 		return
 	hud.say("Бусик", "(шёпотом) Тихо… Не шевелись…")
-	await _wait(3.5)
+	await _wait(2.0)
+	if not _alive(id):
+		return
+	# The drivers talk in their own language before getting out.
+	await _alien_line(lead.global_position + Vector3(0, 1.2, 0), "Видел? Там, у забора, что-то шевельнулось.", 0)
+	if not _alive(id):
+		return
+	await _alien_line(second.global_position + Vector3(0, 1.2, 0), "Проверим.", 3)
 	if not _alive(id):
 		return
 
-	# Visitors get out: one on the road side, one on our side.
+	# Doors open, the visitors climb out bent low, doors shut.
 	for car in _cars:
 		car.watching = false
-	Audio.play_at("door", lead.global_position + Vector3(0.9, 0.8, 0), 0.0)
-	var a1 := _spawn_alien(lead.global_position + Vector3(1.3, 0, 0.6))
-	await _wait(0.7)
+	var a1 := await _exit_car(lead, "L", id)
 	if not _alive(id):
 		return
-	Audio.play_at("door", second.global_position + Vector3(-0.9, 0.8, 0), 0.0)
-	var a2 := _spawn_alien(second.global_position + Vector3(-1.4, 0, 0.4))
-	a1.say()
+	var a2 := await _exit_car(second, "R", id)
+	if not _alive(id):
+		return
 	hud.set_objective("Не высовывайся, пока они не уедут")
 
 	_patrols_left = 2
@@ -121,14 +129,23 @@ func _run() -> void:
 	if not _alive(id):
 		return
 
-	# Back in the cars and away through the gate.
-	for a in _aliens:
-		a.queue_free()
-	_aliens.clear()
-	Audio.play_at("door", lead.global_position + Vector3(0.9, 0.8, 0), 0.0)
-	await _wait(0.5)
-	Audio.play_at("door", second.global_position + Vector3(-0.9, 0.8, 0), 0.0)
-	await _wait(1.2)
+	# They meet by the cars and decide to leave.
+	a1.stare_at(a2.global_position + Vector3(0, 1.6, 0))
+	a2.stare_at(a1.global_position + Vector3(0, 1.6, 0))
+	await _alien_line(a1.global_position + Vector3(0, 1.6, 0), "Ты их видел?", 1, a1)
+	if not _alive(id):
+		return
+	await _alien_line(a2.global_position + Vector3(0, 1.6, 0), "Видел. Здесь пропали.", 2, a2)
+	if not _alive(id):
+		return
+	await _alien_line(a1.global_position + Vector3(0, 1.6, 0), "Ладно. Поехали дальше.", 0, a1)
+	if not _alive(id):
+		return
+	_enter_car(a2, second, "R", id)
+	await _enter_car(a1, lead, "L", id)
+	if not _alive(id):
+		return
+	await _wait(1.0)
 	if not _alive(id):
 		return
 	for car in _cars:
@@ -138,6 +155,54 @@ func _run() -> void:
 	if not _alive(id):
 		return
 	_finish()
+
+
+## Plays an alien phrase (positional voice) with symbols and a translation.
+func _alien_line(pos: Vector3, translation: String, variant: int, speaker: Alien = null) -> void:
+	if speaker and is_instance_valid(speaker):
+		speaker.say(variant)
+	else:
+		Audio.play_at("alien_voice%d" % variant, pos, 0.0, randf_range(0.9, 1.05), 5.0)
+	await hud.say_alien(translation)
+
+
+## Door opens, the visitor unfolds out of the seat bent low and straightens up.
+func _exit_car(car: AlienCar, side: String, id: int) -> Alien:
+	car.set_door(side, true)
+	await _wait(0.5)
+	var a := _spawn_alien(car.seat_point(side))
+	a.duck = 1.0
+	var out := car.outside_point(side)
+	a.look_at_from_position(a.global_position, Vector3(out.x, a.global_position.y, out.z), Vector3.UP)
+	a.walk([out], 0.7)
+	create_tween().tween_property(a, "duck", 0.0, 1.4).set_delay(0.4)
+	await a.arrived
+	if _alive(id):
+		car.set_door(side, false)
+		await _wait(0.4)
+	return a
+
+
+## Walks to the door, opens it, bends down and slides into the seat.
+func _enter_car(a: Alien, car: AlienCar, side: String, id: int) -> void:
+	a.stare_at(Vector3.INF)
+	a.walk([car.outside_point(side)])
+	await a.arrived
+	if not _alive(id):
+		return
+	car.set_door(side, true)
+	await _wait(0.5)
+	if not _alive(id):
+		return
+	create_tween().tween_property(a, "duck", 1.0, 0.9)
+	a.walk([car.seat_point(side)], 0.6)
+	await a.arrived
+	if not _alive(id):
+		return
+	_aliens.erase(a)
+	a.queue_free()
+	car.set_door(side, false)
+	await _wait(0.5)
 
 
 func _patrol_finished(id: int) -> void:
@@ -160,8 +225,8 @@ func _patrol_1(a: Alien, id: int) -> void:
 	await _wait(2.5)
 	if not _alive(id):
 		return
-	a.say()
 	a.look_around(4.0)
+	_alien_line(a.global_position + Vector3(0, 1.6, 0), "Тут… следы. Маленькие.", 2, a)
 	await _wait(4.0)
 	if not _alive(id):
 		return
@@ -178,7 +243,7 @@ func _patrol_1(a: Alien, id: int) -> void:
 	await _wait(2.5)
 	if not _alive(id):
 		return
-	a.walk([Vector3(1.6, y, hide_z - 4.0), _cars[0].global_position + Vector3(1.3, 0, 0.6)])
+	a.walk([Vector3(1.6, y, hide_z - 4.0), _cars[0].outside_point("L") + Vector3(0, 0, 0.8)])
 	await a.arrived
 	_patrol_finished(id)
 
@@ -203,12 +268,12 @@ func _patrol_2(a: Alien, id: int) -> void:
 	await a.arrived
 	if not _alive(id):
 		return
-	a.say()
 	a.look_around(3.0)
+	_alien_line(a.global_position + Vector3(0, 1.6, 0), "Здесь никого.", 3, a)
 	await _wait(3.0)
 	if not _alive(id):
 		return
-	a.walk([Vector3(0.8, y, hide_z - 12.0), _cars[1].global_position + Vector3(-1.4, 0, 0.4)])
+	a.walk([Vector3(0.8, y, hide_z - 12.0), _cars[1].outside_point("R") + Vector3(0, 0, 0.8)])
 	await a.arrived
 	_patrol_finished(id)
 
@@ -242,6 +307,14 @@ func _physics_process(delta: float) -> void:
 	if _marker:
 		_marker_mat.albedo_color.a = 0.45 + 0.35 * sin(_t * 4.0)
 		_marker.visible = _marker.visible and player.global_position.distance_to(hide_spot) > 0.45
+	# Hiding behind the car: lift the third-person camera over the roof so the
+	# visitors can be watched without Busik poking his head out.
+	var hidden_spot := player.global_position.distance_to(hide_spot) < 1.6
+	if rig:
+		rig.peek = 1.25 if hidden_spot and not _cars.is_empty() else 0.0
+	if hidden_spot and not _hint_shown:
+		_hint_shown = true
+		hud.show_hint("Ты в укрытии. Пригнись (C) и смотри мышью поверх машины.\nОт первого лица (V) их видно под машиной.", 7.0)
 	if _caught:
 		return
 	var exclude: Array[RID] = [friend.get_rid()]
@@ -308,18 +381,22 @@ func _reset() -> void:
 	player.rotation.y = 0.0
 	friend.stop_going()
 	friend.scripted_crouch = false
+	friend.hold = false
 	friend.global_position = checkpoint + Vector3(-0.7, 0.0, 0.3)
 	friend.velocity = Vector3.ZERO
 
 
 func _finish() -> void:
 	done = true
+	if rig:
+		rig.peek = 0.0
 	for c in _cars:
 		if is_instance_valid(c):
 			c.queue_free()
 	_cars.clear()
 	_marker.queue_free()
 	friend.scripted_crouch = false
+	friend.hold = false
 	hud.set_suspicion(0.0)
 	var tw := create_tween()
 	tw.tween_property(_heart, "volume_db", -60.0, 2.0)

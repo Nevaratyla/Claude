@@ -16,6 +16,7 @@ var grounded := true
 var crouch := 0.0                   # 0..1
 var look_target := Vector3.ZERO     # world point, or ZERO to look ahead
 var happy := 0.0                    # tail wag, ear perk
+var footsteps := false              # only the player's hero makes step sounds
 
 var _parts := {}
 var _rest := {}
@@ -32,6 +33,7 @@ var _prev_vel := Vector3.ZERO
 var _eye_mat: ShaderMaterial
 var _fur_mats: Array[ShaderMaterial] = []
 var _shell_nodes: Array[MeshInstance3D] = []
+var _body_visible := true
 var _model: Node3D
 
 
@@ -42,7 +44,9 @@ func setup(scene: PackedScene) -> void:
 	add_child(_model)
 	_collect(_model)
 	_apply_materials()
-	Game.quality_changed.connect(func(_q: int) -> void: _apply_materials())
+	Game.quality_changed.connect(func(_q: int) -> void:
+		_apply_materials()
+		set_body_visible(_body_visible))
 
 
 func _collect(n: Node) -> void:
@@ -60,6 +64,17 @@ func _collect(n: Node) -> void:
 ## Returns [skin, shells]: the skin material and the first of the chained
 ## shell passes. Shells go on a separate shadowless copy of the mesh, so the
 ## hero casts one solid shadow instead of a speckled one from every layer.
+## First person: the hero's own body is not drawn but still casts its shadow.
+func set_body_visible(on: bool) -> void:
+	_body_visible = on
+	for mi: MeshInstance3D in _model.find_children("*", "MeshInstance3D", true, false):
+		if mi in _shell_nodes:
+			mi.visible = on
+		else:
+			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if on \
+				else GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
+
+
 func _fur_chain(length: float, density: float) -> Array[ShaderMaterial]:
 	var shells: int = [2, 4, 9, 14][Game.quality]
 	var mats: Array[ShaderMaterial] = []
@@ -148,8 +163,8 @@ func _physics_process(delta: float) -> void:
 	var prev_phase := _phase
 	_phase += delta * (7.0 + run * 5.5) * move
 	# Soft footstep every half stride (sin crosses zero).
-	if grounded and move > 0.2 and floori(_phase / PI) != floori(prev_phase / PI):
-		Audio.play_at("step%d" % randi_range(0, 2), global_position, -16.0 + run * 4.0, randf_range(1.2, 1.5), 1.5)
+	if footsteps and grounded and move > 0.2 and floori(_phase / PI) != floori(prev_phase / PI):
+		Audio.play_at("step%d" % randi_range(0, 2), global_position, -24.0 + run * 5.0, randf_range(0.9, 1.05), 1.2)
 	var s := sin(_phase)
 	var c := cos(_phase)
 	var air := 0.0 if grounded else 1.0

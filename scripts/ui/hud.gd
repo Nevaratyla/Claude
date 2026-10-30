@@ -5,7 +5,8 @@ extends CanvasLayer
 
 signal resumed
 
-const NAME_COLORS := {"Бусик": Color(0.55, 0.72, 1.0), "Фиалка": Color(0.85, 0.6, 1.0)}
+const NAME_COLORS := {"Бусик": Color(0.55, 0.72, 1.0), "Фиалка": Color(0.85, 0.6, 1.0),
+	"Пришелец": Color(0.55, 0.95, 0.75)}
 
 var fade: ColorRect
 var card: Label
@@ -20,7 +21,6 @@ var hint: Label
 var pause_menu: Control
 var suspicion_box: PanelContainer
 var suspicion_bar: ProgressBar
-var _quality_btn: Button
 var _sub_serial := 0
 
 
@@ -183,6 +183,9 @@ func _theme() -> Theme:
 	t.set_stylebox("focus", "Button", bh)
 	t.set_stylebox("pressed", "Button", bh)
 	t.set_font_size("font_size", "Button", 22)
+	t.set_font_size("font_size", "OptionButton", 20)
+	t.set_font_size("font_size", "CheckButton", 18)
+	t.set_font_size("font_size", "PopupMenu", 20)
 	return t
 
 
@@ -218,25 +221,70 @@ func _build_pause(root: Control) -> void:
 	cont.text = "Продолжить"
 	cont.pressed.connect(func() -> void: set_paused(false))
 	box.add_child(cont)
-	_quality_btn = Button.new()
-	_quality_btn.pressed.connect(func() -> void:
-		Game.set_quality((Game.quality + 1) % Game.QUALITY_NAMES.size())
-		_quality_btn.text = "Графика: " + Game.QUALITY_NAMES[Game.quality])
-	_quality_btn.text = "Графика: " + Game.QUALITY_NAMES[Game.quality]
-	box.add_child(_quality_btn)
-	var fs := Button.new()
-	fs.text = "Полный экран (F11)"
-	fs.pressed.connect(toggle_fullscreen)
-	box.add_child(fs)
+	box.add_child(_settings_grid())
 	var quit := Button.new()
 	quit.text = "Выйти из игры"
 	quit.pressed.connect(func() -> void: get_tree().quit())
 	box.add_child(quit)
 	var help := Label.new()
-	help.text = "WASD — идти · Shift — бежать · Пробел — прыжок · C — красться\nE — действие · мышь — камера · колесо — приблизить · F3 — FPS"
+	help.text = "WASD — идти · Shift — бежать · Пробел — прыжок · C — красться · E — действие\nмышь — камера · колесо — приблизить · V — вид от 1-го / 3-го лица · F3 — FPS"
 	help.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	help.add_theme_font_size_override("font_size", 16)
 	box.add_child(help)
+
+
+## Settings: every change applies at once and is saved.
+func _settings_grid() -> Control:
+	var grid := GridContainer.new()
+	grid.columns = 2
+	grid.add_theme_constant_override("h_separation", 24)
+	grid.add_theme_constant_override("v_separation", 10)
+	var row := func(text: String, ctrl: Control) -> void:
+		var l := Label.new()
+		l.text = text
+		grid.add_child(l)
+		ctrl.custom_minimum_size.x = 260
+		grid.add_child(ctrl)
+
+	var preset := OptionButton.new()
+	for n: String in Game.QUALITY_NAMES:
+		preset.add_item(n)
+	preset.selected = Game.quality
+	preset.item_selected.connect(func(i: int) -> void: Game.set_quality(i))
+	row.call("Графика", preset)
+
+	var saver := CheckButton.new()
+	saver.text = "для очень слабых ПК"
+	saver.button_pressed = Game.lod_saver
+	saver.tooltip_text = "Трава и детали рисуются ближе: быстрее, но видно, как они появляются."
+	saver.toggled.connect(func(on: bool) -> void: Game.set_option("lod_saver", on))
+	row.call("Экономная дальность", saver)
+
+	var cam := OptionButton.new()
+	cam.add_item("От третьего лица")
+	cam.add_item("От первого лица")
+	cam.selected = 1 if Game.first_person else 0
+	cam.item_selected.connect(func(i: int) -> void: Game.set_option("first_person", i == 1))
+	Game.settings_changed.connect(func() -> void: cam.selected = 1 if Game.first_person else 0)
+	row.call("Камера (V)", cam)
+
+	for spec: Array in [["Звуки природы", "vol_ambient", 0.0, 1.0], ["Эффекты", "vol_sfx", 0.0, 1.0],
+			["Чувствительность мыши", "mouse_sens", 0.3, 2.0]]:
+		var sl := HSlider.new()
+		sl.min_value = spec[2]
+		sl.max_value = spec[3]
+		sl.step = 0.05
+		sl.value = Game.get(spec[1])
+		var key: String = spec[1]
+		sl.value_changed.connect(func(v: float) -> void: Game.set_option(key, v))
+		row.call(spec[0], sl)
+
+	var fs := CheckButton.new()
+	fs.text = "F11"
+	fs.button_pressed = get_window().mode == Window.MODE_FULLSCREEN
+	fs.toggled.connect(func(_on: bool) -> void: toggle_fullscreen())
+	row.call("Полный экран", fs)
+	return grid
 
 
 func toggle_fullscreen() -> void:
@@ -309,6 +357,23 @@ func say(speaker: String, text: String, time := 0.0) -> void:
 	await get_tree().create_timer(time).timeout
 	if serial == _sub_serial:
 		create_tween().tween_property(subtitle_box, "modulate:a", 0.0, 0.4)
+
+
+const ALIEN_GLYPHS := "ΞΨΩΔΦΛΣΘΓξψλζθδβμπ"
+
+
+## The visitors' language: each word becomes a run of strange glyphs (stable
+## for the same word), with the translation underneath.
+func say_alien(translation: String, time := 0.0) -> void:
+	var words := PackedStringArray()
+	for w in translation.split(" "):
+		var h := absi(hash(w.to_lower()))
+		var g := ""
+		for i in maxi(2, w.length() - 1):
+			g += ALIEN_GLYPHS[(h >> (i * 3)) % ALIEN_GLYPHS.length() if i < 9 else (h + i * 7) % ALIEN_GLYPHS.length()]
+		words.append(g)
+	var line := "[color=#bfe9ff]%s[/color]\n[i][color=#c8c8c8]Перевод: %s[/color][/i]" % [" ".join(words), translation]
+	await say("Пришелец", line, time if time > 0.0 else 2.2 + translation.length() * 0.06)
 
 
 func show_hint(text: String, time := 9.0) -> void:

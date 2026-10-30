@@ -105,7 +105,7 @@ func _apply_quality(q: int) -> void:
 	env.glow_enabled = q >= Game.Quality.MEDIUM
 	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_2_SPLITS if q == Game.Quality.LOW \
 		else DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
-	sun.directional_shadow_max_distance = [35.0, 70.0, 120.0, 180.0][q]
+	sun.directional_shadow_max_distance = [60.0, 80.0, 120.0, 180.0][q]
 	sun.shadow_blur = 1.0 if q == Game.Quality.LOW else 1.2
 	# Sun-size soft shadows (PCSS) look noisy at low sample counts and cost a lot.
 	sun.light_angular_distance = 0.0 if q <= Game.Quality.MEDIUM else 0.5

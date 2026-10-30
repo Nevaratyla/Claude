@@ -59,10 +59,14 @@ func _physics_process(delta: float) -> void:
 	wants_jump = false
 	move_and_slide()
 
-	# Face the movement direction smoothly.
-	if flat.length() > 0.15:
+	# Face the movement direction smoothly (first person: the camera sets it).
+	if flat.length() > 0.15 and not _face_camera():
 		var yaw := atan2(-flat.x, -flat.z)
 		rotation.y = lerp_angle(rotation.y, yaw, 1.0 - exp(-TURN_SPEED * delta))
 	creature.velocity = velocity
 	creature.grounded = is_on_floor()
 	creature.crouch = _crouch
+
+
+func _face_camera() -> bool:
+	return false

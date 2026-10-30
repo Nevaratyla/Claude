@@ -4,7 +4,9 @@ Run:  <venv>/bin/python tools/make_cars.py
 Body = side profile extruded across the width, bevelled and subdivided, with
 wheel arches cut by booleans. Cabin glass is a narrower extruded profile.
 Material names map to Godot materials in scripts/world/cars.gd:
-paint (recoloured per car), glass, rubber, rim, trim, light_front, light_rear, plate.
+paint (recoloured per car), glass, rubber, rim, trim, light_front, light_rear, plate,
+interior. Front doors (Door_L / Door_R, hinge at the front edge) and wheels are
+separate child objects so the game can open and spin them.
 Blender: +X forward, Z up (glTF: +X forward, Y up).
 """
 import math
@@ -157,7 +159,55 @@ def build_car(name, length, width, body_pts, cabin_pts, wheel_x, wheel_r, cleara
     for p in cabin.data.polygons:
         p.material_index = 1 if p.normal.z > 0.75 else 0
 
-    parts = [body, cabin]
+    # Front door openings on both sides (cut through body and cabin glass),
+    # a dark interior behind them, and the doors as separate hinged objects.
+    cab_x0, cab_x1 = cabin_pts[0][0], cabin_pts[1][0]
+    cab_bottom = cabin_pts[0][1]
+    cab_top = cabin_pts[2][1]
+    door_x0 = cab_x0 + (cab_x1 - cab_x0) * 0.42
+    door_x1 = cab_x1 - 0.06
+    door_z0 = clearance + 0.14
+    door_z1 = cab_top - 0.07
+    for side in (-1, 1):
+        cut = box("doorcut", (door_x1 - door_x0, 0.4, door_z1 - door_z0),
+                  ((door_x0 + door_x1) / 2, side * (width * 0.5 - 0.06), (door_z0 + door_z1) / 2))
+        for target in (body, cabin):
+            b = target.modifiers.new("door", "BOOLEAN")
+            b.operation = "DIFFERENCE"
+            b.object = cut
+            b.solver = "EXACT"
+            apply_mods(target)
+        bpy.data.objects.remove(cut)
+    # Booleans add the cutter's empty slot again; keep the original slot order.
+    body.data.materials.clear()
+    mat(body, "paint")
+    while len(cabin.data.materials) > 2:
+        cabin.data.materials.pop()
+
+    interior = box("interior", (cab_x1 - cab_x0 - 0.1, width * 0.84 - 0.1, cab_top - 0.35 - 0.08),
+                   ((cab_x0 + cab_x1) / 2, 0, (cab_top + 0.35) / 2 - 0.04))
+    mat(interior, "interior")
+
+    doors = []
+    for side in (-1, 1):
+        lower = box("door_low", (door_x1 - door_x0 - 0.02, 0.05, cab_bottom - door_z0),
+                    ((door_x0 + door_x1) / 2, side * (width * 0.5 - 0.03), (door_z0 + cab_bottom) / 2))
+        mat(lower, "paint")
+        ledge = box("door_ledge", (door_x1 - door_x0 - 0.02, width * 0.08 + 0.03, 0.04),
+                    ((door_x0 + door_x1) / 2, side * (width * 0.46 - 0.01), cab_bottom))
+        mat(ledge, "paint")
+        win = box("door_win", (door_x1 - door_x0 - 0.06, 0.03, door_z1 - cab_bottom - 0.02),
+                  ((door_x0 + door_x1) / 2, side * (width * 0.42), (cab_bottom + door_z1) / 2))
+        mat(win, "glass")
+        frame = box("door_frame", (door_x1 - door_x0 - 0.02, 0.035, 0.035),
+                    ((door_x0 + door_x1) / 2, side * (width * 0.42), door_z1 - 0.01))
+        mat(frame, "trim")
+        handle = box("handle", (0.14, 0.012, 0.025), (door_x0 + 0.22, side * width * 0.5, cab_bottom - 0.1))
+        mat(handle, "trim")
+        nm = "Door_%s" % ("L" if side > 0 else "R")
+        doors.append((join([lower, ledge, win, frame, handle], nm), Vector((door_x1, side * (width * 0.5 - 0.03), 0))))
+
+    parts = [body, cabin, interior]
     # Pillars between side windows (B-pillar) and black trim strip.
     mid_x = (cabin_pts[1][0] + cabin_pts[2][0]) * 0.5 if len(cabin_pts) > 3 else length * 0.5
     for side in (-1, 1):
@@ -167,9 +217,6 @@ def build_car(name, length, width, body_pts, cabin_pts, wheel_x, wheel_r, cleara
         mirror = box("mirror", (0.12, 0.1, 0.08), (cabin_pts[-1][0] - 0.05, side * (width * 0.5 + 0.04), cabin_pts[0][1] + 0.04))
         mat(mirror, "paint")
         parts.append(mirror)
-        handle = box("handle", (0.14, 0.012, 0.025), (mid_x + 0.25, side * width * 0.5, cabin_pts[0][1] - 0.1))
-        mat(handle, "trim")
-        parts.append(handle)
 
     # Lights, bumpers, plates.
     front_z = clearance + 0.38
@@ -217,7 +264,7 @@ def build_car(name, length, width, body_pts, cabin_pts, wheel_x, wheel_r, cleara
     car = join(parts, name)
     # Centre the car on its footprint, origin on the ground.
     car.data.transform(Matrix.Translation((-length / 2, 0, 0)))
-    for w, hub in wheels:
+    for w, hub in wheels + doors:
         w.data.transform(Matrix.Translation(-hub))
         w.location = hub - Vector((length / 2, 0, 0))
         w.parent = car

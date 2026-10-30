@@ -13,7 +13,9 @@ var _last_pos := Vector3.ZERO
 var _idle_look_t := 0.0
 var _idle_look := Vector3.ZERO
 var scripted_crouch := false
-var _action_t := randf_range(3.0, 6.0)
+## While true she stays where a script put her (hiding) and does nothing on her own.
+var hold := false
+var _action_t := randf_range(8.0, 14.0)
 var _crouch_left := 0.0
 var _hops_left := 0
 var _hop_t := 0.0
@@ -49,6 +51,8 @@ func _physics_process(delta: float) -> void:
 				_goal_done.call()
 		else:
 			wish_dir = to.normalized() * clampf(to.length() / 0.5, 0.3, 1.0)
+	elif hold:
+		pass
 	elif leader:
 		# Walk beside the leader (not behind: that is where the camera looks from).
 		var side := leader.global_basis.x * 0.7
@@ -103,18 +107,18 @@ func _own_actions(delta: float, leader_speed: float) -> void:
 	if _action_t > 0.0:
 		return
 	var idle := leader_speed < 0.3
-	_action_t = randf_range(4.0, 9.0) if idle else randf_range(7.0, 15.0)
+	_action_t = randf_range(10.0, 20.0) if idle else randf_range(25.0, 45.0)
 	var roll := randf()
 	if idle:
-		if roll < 0.35:
+		if roll < 0.3:
 			# Crouch and sniff a plant on the ground.
 			_crouch_left = randf_range(1.2, 2.2)
 			_idle_look = global_position + -global_basis.z * 0.6 + Vector3(0, -0.2, 0)
 			_idle_look_t = _crouch_left
-		elif roll < 0.6:
-			_hops_left = randi_range(1, 3)
+		elif roll < 0.45:
+			_hops_left = randi_range(1, 2)
 			_hop_t = 0.0
-		elif roll < 0.9:
+		elif roll < 0.85:
 			# Wander a few steps to look at something.
 			var a := randf() * TAU
 			_wander = leader.global_position + Vector3(cos(a), 0, sin(a)) * randf_range(0.8, 1.6)
@@ -122,8 +126,8 @@ func _own_actions(delta: float, leader_speed: float) -> void:
 			_wander_left = randf_range(1.0, 2.5)
 			_idle_look = _wander + Vector3(0, -0.1, 0)
 			_idle_look_t = 3.0
-	elif roll < 0.3:
-		# A happy hop now and then while walking.
+	elif roll < 0.15:
+		# A happy hop once in a long while when walking.
 		_hops_left = 1
 		_hop_t = 0.0
 

@@ -27,7 +27,7 @@ var _goal_z := INF
 func start(skip_intro := false) -> void:
 	player.interacted.connect(_on_interact)
 	Game.leaves_changed.connect(_on_leaves)
-	Audio.ambient("ambient_day", -8.0, 4.0)
+	Audio.ambient("ambient_day", -14.0, 4.0)
 	if skip_intro:
 		hud.fade.color.a = 0.0
 		return
@@ -128,6 +128,7 @@ func _stage_end() -> void:
 	stage2.hud = hud
 	stage2.player = player
 	stage2.friend = friend
+	stage2.rig = rig
 	stage2.street = street
 	stage2.cars = cars
 	add_child(stage2)
@@ -139,5 +140,5 @@ func _stage2_end() -> void:
 	hud.set_objective("Продолжение — этап 3: «Вечер»")
 	# The sun starts going down: a preview of the evening in stage 3.
 	create_tween().tween_property(atmosphere, "time_of_day", 0.75, 40.0)
-	Audio.ambient("ambient_evening", -10.0, 30.0)
+	Audio.ambient("ambient_evening", -16.0, 30.0)
 	await hud.show_card("Конец второго этапа.\nДальше: вечер в посёлке, мини-задания и дом бабушки.", 3.5)

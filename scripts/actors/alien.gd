@@ -24,6 +24,7 @@ var _head_yaw := 0.0
 var _look_at := Vector3.INF
 var _time := randf() * 10.0
 var _voice: AudioStreamPlayer3D
+var duck := 0.0                  # 0 standing .. 1 bent low (getting into a car)
 
 
 func _ready() -> void:
@@ -36,6 +37,7 @@ func _ready() -> void:
 	_voice.position.y = 1.6
 	_voice.unit_size = 4.0
 	_voice.max_distance = 40.0
+	_voice.bus = "SFX"
 	add_child(_voice)
 
 
@@ -66,9 +68,16 @@ func _materials(model: Node3D) -> void:
 	eye.metallic_specular = 1.0
 	eye.clearcoat_enabled = true
 	eye.clearcoat = 1.0
+	var trim := StandardMaterial3D.new()          # buttons and belt
+	trim.albedo_color = Color(0.03, 0.03, 0.035)
+	trim.roughness = 0.45
 	for mi: MeshInstance3D in model.find_children("*", "MeshInstance3D", true, false):
 		var key := String(mi.name).split(".")[0]
-		mi.material_override = eye if key.begins_with("Eye") else (skin if key == "Head" else coat)
+		if key == "CoatDeco":
+			mi.material_override = trim
+			continue
+		var dark := key.begins_with("Eye") or key == "Face"
+		mi.material_override = eye if dark else (skin if key == "Head" else coat)
 
 
 ## Walk through the points (y is taken from the ground); emits `arrived`.
@@ -90,8 +99,8 @@ func stare_at(point: Vector3) -> void:
 	_look_at = point
 
 
-func say() -> void:
-	_voice.stream = Audio.stream("alien_voice")
+func say(variant := -1) -> void:
+	_voice.stream = Audio.stream("alien_voice%d" % (variant if variant >= 0 else randi_range(0, 3)))
 	_voice.pitch_scale = randf_range(0.85, 1.1)
 	_voice.play()
 
@@ -157,13 +166,15 @@ func _animate(delta: float, speed: float) -> void:
 	if body:
 		var bob := absf(s) * 0.025 * move
 		var sway := sin(_time * 0.9) * 0.015 * (1.0 - move)
-		body.transform = Transform3D(Basis(Vector3.FORWARD, sway + s * 0.03 * move) * _rest["Body"].basis,
-			_rest["Body"].origin + Vector3(0, bob, 0))
+		# Model faces +Z inside: a positive X rotation bends the top forward.
+		body.transform = Transform3D(Basis(Vector3.RIGHT, duck * 0.75) * Basis(Vector3.FORWARD, sway + s * 0.03 * move)
+			* _rest["Body"].basis, _rest["Body"].origin + Vector3(0, bob - duck * 0.42, 0))
 	for leg in ["Leg_L", "Leg_R"]:
 		var n: Node3D = _parts.get(leg)
 		if n:
 			var sign := 1.0 if leg == "Leg_L" else -1.0
-			n.transform = Transform3D(Basis(Vector3.RIGHT, s * sign * 0.45 * move) * _rest[leg].basis, _rest[leg].origin)
+			n.transform = Transform3D(Basis(Vector3.RIGHT, s * sign * 0.45 * move - duck * 0.9) * _rest[leg].basis,
+				_rest[leg].origin)
 	for arm in ["Arm_L", "Arm_R"]:
 		var n: Node3D = _parts.get(arm)
 		if n:

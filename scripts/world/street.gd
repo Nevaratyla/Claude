@@ -70,6 +70,7 @@ func _make_materials() -> void:
 	mk.add_material("metal_sheet", _surf(2, Color(1, 1, 1), 0.42, 0.35, 0.35))
 	mk.add_material("brick", _surf(3, Color(1, 1, 1), 0.85))
 	mk.add_material("concrete", _surf(4, Color(1, 1, 1), 0.9, 0.0, 0.7))
+	mk.add_material("soil", _surf(4, Color(0.24, 0.17, 0.11), 0.97, 0.0, 0.0), false)
 	mk.add_material("roof_tile", _surf(5, Color(1, 1, 1), 0.38, 0.4, 0.1))
 	mk.add_material("siding", _surf(6, Color(1, 1, 1), 0.55, 0.0, 0.4))
 	mk.add_material("slate", _surf(7, Color(0.62, 0.62, 0.6), 0.9, 0.0, 0.2))
@@ -86,7 +87,7 @@ func _make_materials() -> void:
 	var wire := _surf(0, Color(0.08, 0.08, 0.08), 0.6, 0.2, 0.0)
 	mk.add_material("wire", wire, false, 220.0)
 	var poly := StandardMaterial3D.new()
-	poly.albedo_color = Color(0.9, 0.95, 0.95, 0.35)
+	poly.albedo_color = Color(0.92, 0.96, 0.95, 0.55)
 	poly.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
 	poly.roughness = 0.15
 	poly.cull_mode = BaseMaterial3D.CULL_DISABLED
@@ -541,7 +542,33 @@ func _yard(p: Dictionary) -> void:
 	if rng.randf() < 0.4:
 		var gx := s * (FENCE_X + rng.randf_range(15.0, 22.0))
 		var gz: float = p.z1 + plot_w * rng.randf_range(0.2, 0.8)
-		_greenhouse(Vector3(gx, 0, gz), rng.randf_range(4.0, 6.0))
+		var glen := rng.randf_range(4.0, 6.0)
+		_greenhouse(Vector3(gx, 0, gz), glen)
+		p.greenhouse = [Vector3(gx, 0, gz), glen]
+	# Vegetable beds with wooden borders (crops are planted by Vegetation).
+	p.beds = []
+	for i in rng.randi_range(1, 3):
+		var bl := rng.randf_range(3.0, 5.0)
+		var bw := rng.randf_range(1.0, 1.4)
+		var bx := s * (FENCE_X + rng.randf_range(12.0, 24.0))
+		var bz: float = p.z1 + plot_w * rng.randf_range(0.15, 0.85)
+		var c := Vector3(bx, 0, bz)
+		var clash := false
+		if p.has("house") and Vector2(c.x - p.house.pos.x, c.z - p.house.pos.z).length() < 6.0:
+			clash = true
+		if p.has("greenhouse") and Vector2(c.x - p.greenhouse[0].x, c.z - p.greenhouse[0].z).length() < 4.0:
+			clash = true
+		for b: Array in p.beds:
+			if Vector2(c.x - b[0].x, c.z - b[0].z).length() < 2.5:
+				clash = true
+		if clash:
+			continue
+		var bb := Transform3D(run_basis(Vector3(1, 0, 0)), c)
+		mk.box("soil", bb.translated_local(Vector3(0, 0.07, 0)), Vector3(bl, 0.14, bw), Color(1, 1, 1), 8)
+		for side: float in [-1.0, 1.0]:
+			mk.box("wood", bb.translated_local(Vector3(0, 0.09, side * (bw * 0.5 + 0.02))), Vector3(bl + 0.08, 0.18, 0.04), Color(0.45, 0.36, 0.25))
+			mk.box("wood", bb.translated_local(Vector3(side * (bl * 0.5 + 0.02), 0.09, 0)), Vector3(0.04, 0.18, bw), Color(0.45, 0.36, 0.25))
+		p.beds.append([c, bl, bw])
 	# Shed.
 	if rng.randf() < 0.55:
 		var sx := s * (FENCE_X + rng.randf_range(18.0, 25.0))
@@ -568,6 +595,19 @@ func _greenhouse(c: Vector3, length: float) -> void:
 		var p1 := Vector3(0, sin(a1) * r * 1.3, cos(a1) * r)
 		var hx := Vector3(length * 0.5, 0, 0)
 		mk.quad("polycarbonate", c + bs * (p0 - hx), c + bs * (p0 + hx), c + bs * (p1 + hx), c + bs * (p1 - hx))
+	# End walls (fan of panels) so it reads as a closed greenhouse, door frame on one end.
+	for e: float in [-1.0, 1.0]:
+		var hx := Vector3(e * length * 0.5, 0, 0)
+		var base := c + bs * hx
+		for i in segs:
+			var a0 := PI * i / segs
+			var a1 := PI * (i + 1) / segs
+			mk.tri("polycarbonate", base, c + bs * (hx + Vector3(0, sin(a0) * r * 1.3, cos(a0) * r)),
+				c + bs * (hx + Vector3(0, sin(a1) * r * 1.3, cos(a1) * r)))
+	var door := c + bs * Vector3(length * 0.5 + 0.01, 0, 0)
+	for dz: float in [-0.4, 0.4]:
+		mk.box("metal", Transform3D(bs, door + bs * Vector3(0, 0.9, dz)), Vector3(0.04, 1.8, 0.04), Color(0.85, 0.85, 0.85))
+	mk.box("metal", Transform3D(bs, door + bs * Vector3(0, 1.8, 0)), Vector3(0.04, 0.04, 0.84), Color(0.85, 0.85, 0.85))
 	# Arches.
 	var k := 0.0
 	while k <= length + 0.01:
@@ -645,18 +685,43 @@ func _wire(a: Vector3, b: Vector3, sag: float) -> void:
 # ------------------------------------------------------------------ entrance
 
 func _entrance() -> void:
-	# Big open metal gate of the SNT behind the players' starting point.
+	# Big SNT gate across the whole street behind the starting point, opened
+	# inward with both leaves flush against the fences, and solid fencing that
+	# closes the gap between the gate and the first plots on both sides.
 	var z := START_Z + 2.0
-	for x: float in [-3.3, 3.3]:
-		mk.box("metal", Transform3D(Basis(), Vector3(x, 1.4, z)), Vector3(0.12, 2.8, 0.12), Color(0.2, 0.22, 0.2))
-	# Leaves swung open toward the fences.
+	var green := Color(0.12, 0.3, 0.19)
+	var entry := {"fh": 1.9, "idx": 0, "colors": {"prof": green, "paint": green, "wood": green}}
 	for sgn: int in [-1, 1]:
-		var hinge := Vector3(sgn * 3.3, 1.2, z)
-		var leaf_dir := Vector3(sgn * 0.25, 0, -1).normalized() * -1.0
-		var c := hinge + leaf_dir * -1.6
-		mk.box("metal_sheet", Transform3D(run_basis(leaf_dir), c), Vector3(3.1, 1.9, 0.01), Color(0.12, 0.3, 0.19), 0)
+		var post_x := sgn * (FENCE_X - 0.05)
+		mk.box("metal", Transform3D(Basis(), Vector3(post_x, 1.4, z)), Vector3(0.12, 2.8, 0.12), Color(0.2, 0.22, 0.2))
+		# Open leaf lying along the fence, just inside it.
+		var leaf_len := FENCE_X - 0.15
+		mk.box("metal_sheet", Transform3D(run_basis(Vector3(0, 0, -1)), Vector3(sgn * (FENCE_X - 0.12), 1.05, z - leaf_len * 0.5)),
+			Vector3(leaf_len, 1.85, 0.01), green, 0)
+		mk.box("metal", Transform3D(run_basis(Vector3(0, 0, -1)), Vector3(sgn * (FENCE_X - 0.16), 1.05, z - leaf_len * 0.5)),
+			Vector3(leaf_len, 0.05, 0.04), Color(0.2, 0.22, 0.2))
+		# Side fence from the gate down to the first plot of this side.
+		var first_z := START_Z
+		for p in plots:
+			if p.side == sgn and p.idx == 0:
+				first_z = p.z0
+		var a := Vector3(sgn * FENCE_X, 0, z)
+		var b := Vector3(sgn * FENCE_X, 0, first_z)
+		if sgn < 0:
+			var t := a
+			a = b
+			b = t
+		_fence_run("prof", a, b, 0.0, a.distance_to(b), entry)
+		# Front fence of the village, from the gate outward behind the plots.
+		var fa := Vector3(sgn * FENCE_X, 0, z)
+		var fb := Vector3(sgn * (FENCE_X + PLOT_DEPTH + 2.0), 0, z)
+		if sgn > 0:
+			var t := fa
+			fa = fb
+			fb = t
+		_fence_run("prof", fa, fb, 0.0, fa.distance_to(fb), entry)
 	# Sign board.
-	var sign_pos := Vector3(-3.5, 2.1, z - 0.08)
+	var sign_pos := Vector3(-FENCE_X - 0.1, 2.1, z + 0.12)
 	mk.box("paint", Transform3D(Basis(), sign_pos), Vector3(1.6, 0.8, 0.03), Color(0.92, 0.92, 0.9))
 	var l1 := Label3D.new()
 	l1.text = "СНТ «Рассвет»\n\nПОСТОРОННИМ\nВХОД ВОСПРЕЩЁН"

@@ -184,23 +184,31 @@ func _test_stage2(cam: Camera3D) -> void:
 	Engine.time_scale = 3.0
 	player.global_position = st.hide_spot + Vector3(0, 0.05, 0.4)
 	player.force_crouch = true
-	var shots := [[13.0, "s2_cars", Vector3(-3.2, 0.35, st.hide_z + 2.6), Vector3(-0.6, 0.9, st.hide_z - 12.0)],
-		[24.0, "s2_alien", Vector3(-3.5, 0.3, st.hide_z + 1.8), Vector3(-1.0, 1.2, st.hide_z - 3.4)],
-		[28.0, "s2_wide", Vector3(2.2, 2.4, st.hide_z + 6.0), Vector3(-1.5, 0.3, st.hide_z - 2.0)]]
+	var shots := [[22.5, "s2_exit", Vector3(2.6, 1.5, st.hide_z - 4.0), Vector3(-0.6, 0.8, st.hide_z - 11.0)],
+		[32.0, "s2_alien", Vector3(0.6, 1.3, st.hide_z - 0.5), Vector3(-1.0, 1.4, st.hide_z - 3.4)],
+		[36.0, "s2_wide", Vector3(2.2, 2.4, st.hide_z + 6.0), Vector3(-1.5, 0.3, st.hide_z - 2.0)],
+		[37.0, "s2_peek", Vector3.ZERO, Vector3.ZERO]]
 	var t := 0.0
 	for sh in shots:
 		await get_tree().create_timer(sh[0] - t).timeout
 		t = sh[0]
-		cam.make_current()
-		cam.global_position = sh[2]
-		cam.look_at(sh[3])
+		if sh[2] == Vector3.ZERO:
+			# What the player sees from the hiding place (third person, raised).
+			rig.yaw = PI
+			rig.pitch = -0.25
+			rig.camera.make_current()
+			await get_tree().create_timer(1.5).timeout
+		else:
+			cam.make_current()
+			cam.global_position = sh[2]
+			cam.look_at(sh[3])
 		await get_tree().process_frame
 		await get_tree().process_frame
 		get_viewport().get_texture().get_image().save_png(_shot_dir.path_join(sh[1] + ".png"))
 		print("[shot] %s aliens=%d cars=%d suspicion=%.2f" % [sh[1], st._aliens.size(), st._cars.size(), st._suspicion])
 	rig.camera.make_current()
 	var waited := 0.0
-	while not st.done and st.caught_count == 0 and waited < 120.0:
+	while not st.done and st.caught_count == 0 and waited < 150.0:
 		await get_tree().create_timer(1.0).timeout
 		waited += 1.0
 	print("[test] stage2 hidden: done=%s caught=%d %s" % [st.done, st.caught_count,

@@ -10,7 +10,7 @@ import math
 import os
 
 import bpy  # noqa: F401,I001  (must be imported before bmesh/mathutils)
-from mathutils import Vector
+from mathutils import Quaternion, Vector
 
 from make_characters import (apply_mods, cone, join, material, paint, parent, reset, set_origin,
                              smooth, sphere, subsurf)
@@ -97,16 +97,47 @@ def build():
     smooth(head)
     set_origin(head, (0, 0, NECK))
 
+    # Eyes: big glossy almond lenses lying on the face, slanted, wrapping
+    # slightly around the sides of the head.
     eyes = []
+    hc = Vector((0, 0, NECK + 0.2))
     for side in (-1, 1):
-        e = sphere(f"Eye_{'L' if side < 0 else 'R'}", 0.055, (1.0, 0.4, 0.62), 24, 14)
-        e.location = (side * 0.055, -0.124, NECK + 0.185)
-        e.rotation_euler = (0, math.radians(side * 28), math.radians(side * -12))
+        d = Vector((side * 0.5, -0.86, -0.06)).normalized()
+        e = sphere(f"Eye_{'L' if side < 0 else 'R'}", 0.05, (1.0, 0.36, 0.56), 28, 16)
+        q = Vector((0, -1, 0)).rotation_difference(d)
+        roll = Quaternion(d, math.radians(side * -24))
+        e.rotation_mode = "QUATERNION"
+        e.rotation_quaternion = roll @ q
+        e.location = hc + Vector((d.x * 0.128, d.y * 0.128, d.z * 0.14))
         eyes.append(e)
     for ob in eyes:
         smooth(ob)
 
-    # Limbs and coat stay unsubdivided (sharp hem, no pointy blobs at the caps).
+    # Small face details: two nostril pits and a thin lipless mouth.
+    face = []
+    for side in (-1, 1):
+        n = sphere("nostril", 0.004, (1.0, 0.6, 1.6), 8, 6)
+        n.location = hc + Vector((side * 0.009, -0.125, -0.06))
+        face.append(n)
+    mouth = sphere("mouth", 0.016, (1.0, 0.25, 0.12), 12, 6)
+    mouth.location = hc + Vector((0, -0.112, -0.105))
+    face.append(mouth)
+    face_parts = join(face, "Face")
+    material(face_parts, "eye")
+
+    # Coat details: buttons down the front, a belt.
+    deco = []
+    for k in range(4):
+        b = sphere("button", 0.012, (1, 0.5, 1), 8, 6)
+        b.location = (0.0, -0.205 - k * 0.006, 1.32 - k * 0.17)
+        deco.append(b)
+    belt = cone("belt", 0.232, 0.229, 0.05, 32)
+    belt.location = (0, 0.01, 1.02)
+    deco.append(belt)
+    coat_deco = join(deco, "CoatDeco")
+    material(coat_deco, "eye")
+    parent(coat_deco, body)
+
     for ob in legs + [body] + arms:
         smooth(ob)
     subsurf(head, 1)
@@ -156,7 +187,7 @@ def build():
     parent(body, root)
     for ob in legs + arms + [head]:
         parent(ob, body)
-    for ob in eyes:
+    for ob in eyes + [face_parts]:
         parent(ob, head)
 
 
