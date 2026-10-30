@@ -71,6 +71,18 @@ func _make_materials() -> void:
 	plate.albedo_color = Color(0.92, 0.92, 0.9)
 	plate.roughness = 0.5
 	_mats["plate"] = plate
+	var lf_on := StandardMaterial3D.new()
+	lf_on.albedo_color = Color(1, 1, 0.95)
+	lf_on.emission_enabled = true
+	lf_on.emission = Color(1.0, 0.97, 0.88)
+	lf_on.emission_energy_multiplier = 4.0
+	_mats["light_front_on"] = lf_on
+	var lr_on := StandardMaterial3D.new()
+	lr_on.albedo_color = Color(0.6, 0.02, 0.02)
+	lr_on.emission_enabled = true
+	lr_on.emission = Color(1.0, 0.05, 0.03)
+	lr_on.emission_energy_multiplier = 2.5
+	_mats["light_rear_on"] = lr_on
 
 
 func _paint(col: Color) -> StandardMaterial3D:
@@ -88,16 +100,24 @@ func _paint(col: Color) -> StandardMaterial3D:
 
 
 func _spawn(model: String, pos: Vector3, yaw: float) -> Node3D:
+	return spawn(model, pos, yaw, self, PAINTS[rng.randi_range(0, PAINTS.size() - 1)])
+
+
+## Instantiates a car under `parent` with shared materials. `lights_on` swaps
+## in glowing head/tail light materials.
+func spawn(model: String, pos: Vector3, yaw: float, parent: Node, paint_col: Color, lights_on := false) -> Node3D:
 	var car: Node3D = MODELS[model].instantiate()
 	car.position = pos
 	car.rotation.y = yaw
-	add_child(car)
-	var paint := _paint(PAINTS[rng.randi_range(0, PAINTS.size() - 1)])
+	parent.add_child(car)
+	var paint := _paint(paint_col)
 	for mi: MeshInstance3D in car.find_children("*", "MeshInstance3D", true, false):
 		mi.visibility_range_end = 220.0
 		for i in mi.mesh.get_surface_count():
 			var src := mi.mesh.surface_get_material(i)
 			var nm := src.resource_name if src else ""
+			if lights_on and nm.begins_with("light_"):
+				nm += "_on"
 			mi.set_surface_override_material(i, paint if nm == "paint" or not _mats.has(nm) else _mats[nm])
 	return car
 

@@ -11,6 +11,10 @@ var hud: Hud
 var player: Player
 var friend: Friend
 var rig: CameraRig
+var street: Street
+var cars: Cars
+var atmosphere: Atmosphere
+var stage2: Stage2
 var pickups: Array[BurdockPickup] = []
 
 var _leaf_quest := false
@@ -23,6 +27,7 @@ var _goal_z := INF
 func start(skip_intro := false) -> void:
 	player.interacted.connect(_on_interact)
 	Game.leaves_changed.connect(_on_leaves)
+	Audio.ambient("ambient_day", -8.0, 4.0)
 	if skip_intro:
 		hud.fade.color.a = 0.0
 		return
@@ -118,6 +123,21 @@ func _on_leaves(n: int) -> void:
 
 
 func _stage_end() -> void:
-	await hud.say("Фиалка", "Стой! Слышишь? Кто-то едет… Прячемся!", 3.0)
-	hud.set_objective("Продолжение — этап 2: «Незваные гости»")
-	await hud.show_card("Конец первого этапа.\nДальше: машины с пришельцами, прятки и вечер в посёлке.", 3.0)
+	stage2 = Stage2.new()
+	stage2.name = "Stage2"
+	stage2.hud = hud
+	stage2.player = player
+	stage2.friend = friend
+	stage2.street = street
+	stage2.cars = cars
+	add_child(stage2)
+	stage2.finished.connect(_stage2_end)
+	stage2.begin(player.global_position.z)
+
+
+func _stage2_end() -> void:
+	hud.set_objective("Продолжение — этап 3: «Вечер»")
+	# The sun starts going down: a preview of the evening in stage 3.
+	create_tween().tween_property(atmosphere, "time_of_day", 0.75, 40.0)
+	Audio.ambient("ambient_evening", -10.0, 30.0)
+	await hud.show_card("Конец второго этапа.\nДальше: вечер в посёлке, мини-задания и дом бабушки.", 3.5)

@@ -6,6 +6,7 @@ signal interacted(target: Node)
 
 var camera_rig: CameraRig
 var focus: Node3D = null        # nearest interactable within reach
+var force_crouch := false       # cutscenes and automated tests
 
 
 func _ready() -> void:
@@ -18,7 +19,7 @@ func _physics_process(delta: float) -> void:
 		var yaw := camera_rig.yaw
 		wish_dir = Vector3(input.x, 0, input.y).rotated(Vector3.UP, yaw)
 		wants_run = Input.is_action_pressed("run")
-		wants_crouch = Input.is_action_pressed("crouch")
+		wants_crouch = Input.is_action_pressed("crouch") or force_crouch
 		if Input.is_action_just_pressed("jump"):
 			wants_jump = true
 	super(delta)

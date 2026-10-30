@@ -18,6 +18,8 @@ var subtitle: RichTextLabel
 var prompt: Label
 var hint: Label
 var pause_menu: Control
+var suspicion_box: PanelContainer
+var suspicion_bar: ProgressBar
 var _quality_btn: Button
 var _sub_serial := 0
 
@@ -83,6 +85,35 @@ func _ready() -> void:
 	subtitle.add_theme_font_size_override("bold_font_size", 24)
 	subtitle_box.add_child(subtitle)
 	subtitle_box.modulate.a = 0.0
+
+	# "You are being noticed" meter, top centre.
+	suspicion_box = PanelContainer.new()
+	suspicion_box.set_anchors_preset(Control.PRESET_CENTER_TOP)
+	suspicion_box.grow_horizontal = Control.GROW_DIRECTION_BOTH
+	suspicion_box.position.y += 24
+	suspicion_box.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	root.add_child(suspicion_box)
+	var sv := VBoxContainer.new()
+	suspicion_box.add_child(sv)
+	var sl := Label.new()
+	sl.text = "Тебя замечают!"
+	sl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	sl.add_theme_color_override("font_color", Color(1.0, 0.55, 0.4))
+	sv.add_child(sl)
+	suspicion_bar = ProgressBar.new()
+	suspicion_bar.custom_minimum_size = Vector2(260, 12)
+	suspicion_bar.max_value = 1.0
+	suspicion_bar.show_percentage = false
+	var fill := StyleBoxFlat.new()
+	fill.bg_color = Color(0.95, 0.3, 0.15)
+	fill.set_corner_radius_all(4)
+	var bg := StyleBoxFlat.new()
+	bg.bg_color = Color(0, 0, 0, 0.5)
+	bg.set_corner_radius_all(4)
+	suspicion_bar.add_theme_stylebox_override("fill", fill)
+	suspicion_bar.add_theme_stylebox_override("background", bg)
+	sv.add_child(suspicion_bar)
+	suspicion_box.modulate.a = 0.0
 
 	prompt = Label.new()
 	prompt.set_anchors_preset(Control.PRESET_CENTER)
@@ -251,6 +282,11 @@ func set_objective(text: String) -> void:
 	objective.text = text
 	var tw := create_tween()
 	tw.tween_property(objective_box, "modulate:a", 0.0 if text == "" else 1.0, 0.5)
+
+
+func set_suspicion(v: float) -> void:
+	suspicion_bar.value = v
+	suspicion_box.modulate.a = move_toward(suspicion_box.modulate.a, 1.0 if v > 0.03 else 0.0, 0.08)
 
 
 ## Updates the objective text without the fade (for live counters).

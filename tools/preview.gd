@@ -45,6 +45,10 @@ func _run() -> void:
 		cars._spawn(m, Vector3(x, 0, -6), 0.4)
 		x += 5.0
 
+	var alien := Alien.new()
+	world.add_child(alien)
+	alien.global_position = Vector3(1.6, 0, -1.2)
+	alien.rotation.y = PI - 0.5     # turned toward the camera
 	var cam := Camera3D.new()
 	cam.fov = 40
 	cam.near = 0.02
@@ -55,6 +59,8 @@ func _run() -> void:
 		["heroes_side", Vector3(0.95, 0.35, 0.45), Vector3(0, 0.22, 0)],
 		["busik_face", Vector3(-0.22, 0.33, 0.42), Vector3(-0.22, 0.29, 0)],
 		["cars", Vector3(0, 2.2, 6.0), Vector3(0, 0.8, -6)],
+		["alien", Vector3(0.9, 1.3, 1.3), Vector3(1.6, 1.1, -1.2)],
+		["alien_low", Vector3(0.2, 0.25, 0.6), Vector3(1.6, 1.4, -1.2)],
 	]
 	for s in shots:
 		cam.global_position = s[1]

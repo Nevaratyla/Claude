@@ -145,7 +145,11 @@ func _physics_process(delta: float) -> void:
 	_was_grounded = grounded
 	_land = move_toward(_land, 0.0, delta * 4.0)
 
+	var prev_phase := _phase
 	_phase += delta * (7.0 + run * 5.5) * move
+	# Soft footstep every half stride (sin crosses zero).
+	if grounded and move > 0.2 and floori(_phase / PI) != floori(prev_phase / PI):
+		Audio.play_at("step%d" % randi_range(0, 2), global_position, -16.0 + run * 4.0, randf_range(1.2, 1.5), 1.5)
 	var s := sin(_phase)
 	var c := cos(_phase)
 	var air := 0.0 if grounded else 1.0

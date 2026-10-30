@@ -54,6 +54,9 @@ func _ready() -> void:
 	director.player = player
 	director.friend = friend
 	director.rig = rig
+	director.street = street
+	director.cars = cars
+	director.atmosphere = atmosphere
 	for n in get_tree().get_nodes_in_group("interactable"):
 		if n is BurdockPickup:
 			director.pickups.append(n)
@@ -133,6 +136,7 @@ func _autoshot() -> void:
 			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME),
 			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)])
 	await _test_quest()
+	await _test_stage2(cam)
 	get_tree().quit()
 
 
@@ -168,3 +172,47 @@ func _test_quest() -> void:
 		if is_instance_valid(b):
 			furthest = minf(furthest, b.global_position.z)
 	print("[test] burdock area length %.0f m" % -furthest)
+
+
+## Stage 2: hidden and crouched behind the car the heroes must not be seen and
+## the scene must finish; standing in the road they must be caught.
+func _test_stage2(cam: Camera3D) -> void:
+	var st := director.stage2
+	if st == null:
+		print("[test] FAIL: stage 2 did not start")
+		return
+	Engine.time_scale = 3.0
+	player.global_position = st.hide_spot + Vector3(0, 0.05, 0.4)
+	player.force_crouch = true
+	var shots := [[13.0, "s2_cars", Vector3(-3.2, 0.35, st.hide_z + 2.6), Vector3(-0.6, 0.9, st.hide_z - 12.0)],
+		[24.0, "s2_alien", Vector3(-3.5, 0.3, st.hide_z + 1.8), Vector3(-1.0, 1.2, st.hide_z - 3.4)],
+		[28.0, "s2_wide", Vector3(2.2, 2.4, st.hide_z + 6.0), Vector3(-1.5, 0.3, st.hide_z - 2.0)]]
+	var t := 0.0
+	for sh in shots:
+		await get_tree().create_timer(sh[0] - t).timeout
+		t = sh[0]
+		cam.make_current()
+		cam.global_position = sh[2]
+		cam.look_at(sh[3])
+		await get_tree().process_frame
+		await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png(_shot_dir.path_join(sh[1] + ".png"))
+		print("[shot] %s aliens=%d cars=%d suspicion=%.2f" % [sh[1], st._aliens.size(), st._cars.size(), st._suspicion])
+	rig.camera.make_current()
+	var waited := 0.0
+	while not st.done and st.caught_count == 0 and waited < 120.0:
+		await get_tree().create_timer(1.0).timeout
+		waited += 1.0
+	print("[test] stage2 hidden: done=%s caught=%d %s" % [st.done, st.caught_count,
+		"PASS" if st.done and st.caught_count == 0 else "FAIL"])
+	# Second run: stand in the middle of the road.
+	player.force_crouch = false
+	director._stage_end()
+	var st2 := director.stage2
+	player.global_position = Vector3(-0.3, street.height_at(-0.3, st2.hide_z - 3.0) + 0.05, st2.hide_z - 3.0)
+	waited = 0.0
+	while st2.caught_count == 0 and waited < 60.0:
+		await get_tree().create_timer(1.0).timeout
+		waited += 1.0
+	print("[test] stage2 exposed: caught=%d %s" % [st2.caught_count, "PASS" if st2.caught_count > 0 else "FAIL"])
+	Engine.time_scale = 1.0

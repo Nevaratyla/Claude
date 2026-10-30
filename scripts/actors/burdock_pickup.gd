@@ -66,6 +66,7 @@ func pick() -> void:
 		return
 	picked = true
 	remove_from_group("interactable")
+	Audio.play_at("leaf", global_position + Vector3(0, 0.3, 0), -4.0, randf_range(0.9, 1.15))
 	_glint.visible = false
 	# The plant shakes and shrinks: the big leaf has been torn off.
 	var tw := create_tween()

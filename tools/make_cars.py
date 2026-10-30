@@ -189,9 +189,12 @@ def build_car(name, length, width, body_pts, cabin_pts, wheel_x, wheel_r, cleara
     mat(grille, "trim")
     parts.append(grille)
 
-    # Wheels: tyre + rim with spokes.
+    # Wheels: tyre + rim with spokes, each wheel its own object (origin at the
+    # hub) so the game can spin them when the car drives.
+    wheels = []
     for wx in wheel_x:
         for side in (-1, 1):
+            parts_before = len(parts)
             y = side * (width * 0.5 - 0.11)
             tyre = cylinder("tyre", wheel_r, 0.2, 32, (wx, y, wheel_r))
             bv = tyre.modifiers.new("bev", "BEVEL")
@@ -208,9 +211,16 @@ def build_car(name, length, width, body_pts, cabin_pts, wheel_x, wheel_r, cleara
                 sp.rotation_euler = (0, a, 0)
                 mat(sp, "rim")
                 parts.append(sp)
+            nm = "Wheel_%s%s" % ("F" if wx > length / 2 else "R", "L" if side > 0 else "R")
+            wheels.append((join(parts[parts_before:], nm), Vector((wx, y, wheel_r))))
+            del parts[parts_before:]
     car = join(parts, name)
     # Centre the car on its footprint, origin on the ground.
     car.data.transform(Matrix.Translation((-length / 2, 0, 0)))
+    for w, hub in wheels:
+        w.data.transform(Matrix.Translation(-hub))
+        w.location = hub - Vector((length / 2, 0, 0))
+        w.parent = car
     return car
 
 
