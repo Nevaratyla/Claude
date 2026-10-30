@@ -54,6 +54,46 @@ var _cover: Array = []                       # [MultiMeshInstance3D, full draw d
 var _lumps: Array = []
 
 
+## Vine leaves and dark grape bunches on top of granny's pergola, with a few
+## shoots hanging down the posts.
+func _grape_canopy(pg: Dictionary) -> void:
+	var c: Vector3 = pg.c
+	var su: float = pg.su
+	var sv: float = pg.sv
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for i in 420:
+		var hanging := i % 6 == 0
+		var p := c + Vector3(rng.randf_range(-su, su) * 0.5, rng.randf_range(-0.05, 0.12), rng.randf_range(-sv, sv) * 0.55)
+		if hanging:
+			p.y -= rng.randf_range(0.2, 0.9)
+		var n := (Vector3.UP + Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6))).normalized()
+		if hanging:
+			n = Vector3(rng.randf_range(-1, 1), 0.2, rng.randf_range(-1, 1)).normalized()
+		var t := n.cross(Vector3.FORWARD if absf(n.z) < 0.9 else Vector3.RIGHT).normalized()
+		var b := n.cross(t)
+		var s := rng.randf_range(0.35, 0.55)
+		var shade := rng.randf_range(0.85, 1.15)
+		st.set_color(Color(0.24 * shade, 0.4 * shade, 0.12 * shade, 0.9))
+		st.set_normal((n + Vector3.UP).normalized())
+		var c0 := p - t * s * 0.5 - b * s * 0.5
+		var corners := [[c0, Vector2(0, 1)], [c0 + t * s, Vector2(1, 1)], [c0 + t * s + b * s, Vector2(1, 0)], [c0 + b * s, Vector2(0, 0)]]
+		for k: int in [0, 2, 1, 0, 3, 2]:
+			st.set_uv(corners[k][1])
+			st.add_vertex(corners[k][0])
+	var mat := ShaderMaterial.new()
+	mat.shader = FOLIAGE
+	mat.set_shader_parameter("tile", 5)                   # leaves with round fruit
+	mat.set_shader_parameter("fruit_color", Color(0.2, 0.06, 0.24))
+	mat.set_shader_parameter("autumn", 0.06)
+	mat.set_shader_parameter("flex", 0.1)
+	var mi := MeshInstance3D.new()
+	mi.name = "GrapeVine"
+	mi.mesh = st.commit()
+	mi.material_override = mat
+	add_child(mi)
+
+
 func _clear_of_garden(p: Dictionary, pos: Vector3, r: float) -> bool:
 	if p.has("greenhouse") and Vector2(pos.x - p.greenhouse[0].x, pos.z - p.greenhouse[0].z).length() < p.greenhouse[1] * 0.5 + 1.5 + r:
 		return false
@@ -293,6 +333,12 @@ func _place(street: Street) -> void:
 		var house_pos: Vector3 = p.house.pos if p.has("house") else Vector3(1e6, 0, 0)
 		var free := func(pos: Vector3, r: float) -> bool:
 			return Vector2(pos.x - house_pos.x, pos.z - house_pos.z).length() > 5.0 + r
+		# Granny's plot follows the sketch exactly: only its own trees, the vines.
+		if p.get("granny", false):
+			for t: Array in p.granny_trees:
+				_add(t[0], t[1], t[2])
+			_grape_canopy(p.pergola)
+			continue
 		# Thuja row along the front fence (as in the reference photo).
 		if rng.randf() < 0.3:
 			var n := rng.randi_range(3, 6)
@@ -466,10 +512,9 @@ func _grass(street: Street) -> void:
 		var short: Array = []
 		var tall_x: Array = []
 		var flowers: Array = []
-		# [side, x from, x to, clumps per m², only on dirt road]
-		for zone: Array in [[-1, 2.75, Street.FENCE_X - 0.05, 30.0, false], [1, 2.75, Street.FENCE_X - 0.05, 30.0, false],
-				[-1, Street.FENCE_X + 0.1, Street.FENCE_X + 7.0, 6.0, false], [1, Street.FENCE_X + 0.1, Street.FENCE_X + 7.0, 6.0, false],
-				[1, -0.32, 0.32, 22.0, true], [-1, 1.75, 2.6, 7.0, true], [1, 1.75, 2.6, 7.0, true]]:
+		# [side, x from, x to, clumps per m²]: the verges and the front of the yards.
+		for zone: Array in [[-1, 2.75, Street.FENCE_X - 0.05, 30.0], [1, 2.75, Street.FENCE_X - 0.05, 30.0],
+				[-1, Street.FENCE_X + 0.1, Street.FENCE_X + 7.0, 6.0], [1, Street.FENCE_X + 0.1, Street.FENCE_X + 7.0, 6.0]]:
 			var side: int = zone[0]
 			var x0: float = zone[1]
 			var x1: float = zone[2]
@@ -477,8 +522,6 @@ func _grass(street: Street) -> void:
 			for i in count:
 				var x := side * rng.randf_range(x0, x1)
 				var zz := z - rng.randf() * GRASS_CHUNK
-				if zone[4] and street.road.dirt_at(zz) < 0.6:
-					continue
 				# Keep the collectible burdocks in the open, not buried in grass.
 				if zz > -135.0 and _near_spot(x, zz, 0.7):
 					continue
@@ -569,9 +612,10 @@ func _ground_cover(street: Street) -> void:
 			var hw := street.road.half_width_at(zz)
 			var on_road := ax < hw
 			var y := street.height_at(x, zz)
-			if on_road and d > 0.5 and (ax < 0.35 or ax > hw - 0.5) and rng.randf() < 0.35:
+			# Plantain pushes through the cracks along the broken asphalt edge.
+			if on_road and ax > hw - 0.45 and rng.randf() < 0.3:
 				plant.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.7, 1.4)), Vector3(x, y - 0.005, zz)))
-			elif (on_road and d > 0.4) or (not on_road and ax < 3.1):
+			elif (on_road and d > 0.25 and rng.randf() < d * 1.6) or (not on_road and ax < 3.1):
 				var size := rng.randf_range(0.015, 0.045) if rng.randf() < 0.85 else rng.randf_range(0.06, 0.12)
 				var b := Basis.from_euler(Vector3(rng.randf() * TAU, rng.randf() * TAU, rng.randf() * TAU)).scaled(
 					Vector3(size, size * rng.randf_range(0.5, 0.8), size * rng.randf_range(0.7, 1.1)))

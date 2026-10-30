@@ -28,6 +28,11 @@ func build(street: Street) -> void:
 		_add_collision(car)
 		verge_cars.append(car)
 	for p in street.plots:
+		if p.get("granny", false):
+			# Granny's old car under the carport, nose toward the house.
+			var cp: Vector3 = p.carport
+			_spawn("sedan", cp, PI if p.side < 0 else 0.0)
+			continue
 		if p.has("gate_world") and rng.randf() < 0.35:
 			var s: int = p.side
 			var g: Vector3 = p.gate_world

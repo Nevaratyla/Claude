@@ -123,6 +123,8 @@ func _autoshot() -> void:
 		["burdock", vegetation.burdock_spots[1] + Vector3(-signf(vegetation.burdock_spots[1].x) * 1.6, 0.6, 0.9), vegetation.burdock_spots[1] + Vector3(0, 0.25, 0), false],
 		["dirt_road", Vector3(0.9, 0.45, -16.0), Vector3(-0.3, 0.2, -32.0), false],
 		["overview", Vector3(0.0, 25.0, 20.0), Vector3(0.0, 0.0, -80.0), false],
+		["granny_top", street.granny.gate_world + Vector3(-13.0, 26.0, 6.0), street.granny.gate_world + Vector3(-13.0, 0.0, -5.0), false],
+		["granny_street", street.granny.gate_world + Vector3(4.6, 1.3, 7.0), street.granny.gate_world + Vector3(-6.0, 1.2, -3.0), false],
 	]
 	for v in views:
 		if v[3]:

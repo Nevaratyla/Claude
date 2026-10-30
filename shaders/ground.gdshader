@@ -1,13 +1,13 @@
 // Street floor and yards. Large-scale layout comes from vertex colour (set by
-// Road): R carriageway, G dirt road, B puddle, A wheel rut. Flat yard quads
-// pass zero colour. Fine detail comes from the shared noise texture.
+// Road): R carriageway, G asphalt wear, B puddle, A sagging wheel track. Flat
+// yard quads pass zero colour. Fine detail comes from the shared noise texture.
 shader_type spatial;
 render_mode blend_mix, cull_back, diffuse_burley, specular_schlick_ggx;
 
 #include "res://shaders/common.gdshaderinc"
 
 uniform vec3 asphalt_color : source_color = vec3(0.2, 0.2, 0.195);
-uniform vec3 dirt_road : source_color = vec3(0.36, 0.31, 0.25);
+uniform vec3 dirt_road : source_color = vec3(0.33, 0.31, 0.28);   // crumbled base: gravel and grit
 uniform vec3 gravel_color : source_color = vec3(0.45, 0.43, 0.39);
 uniform vec3 dirt_color : source_color = vec3(0.26, 0.21, 0.15);
 uniform vec3 grass_color : source_color = vec3(0.17, 0.24, 0.08);
@@ -30,7 +30,7 @@ void fragment() {
 
 	// Carriageway with a ragged edge.
 	float road = smoothstep(0.35, 0.65, vmask.r + (mid.r - 0.5) * 0.25 + (fine.g - 0.5) * 0.12);
-	// Asphalt breaks up into islands where it meets dirt stretches.
+	// Worn asphalt breaks up into islands with the gravel base showing between.
 	float keep_v = (1.0 - vmask.g) + (big.g - 0.5) * 0.55 + (mid.a - 0.5) * 0.3;
 	float asph_keep = smoothstep(0.47, 0.53, keep_v);
 
@@ -52,15 +52,13 @@ void fragment() {
 	crack = max(crack, rim * 0.8);
 	asph = mix(asph, vec3(0.05, 0.05, 0.045), crack * 0.85);
 
-	// Dirt road: compacted soil, darker moist ruts, pebbles, grass on the hump.
+	// Crumbled patches: grit and gravel, darker where the wheels go.
 	vec3 dirt = dirt_road * (0.82 + fine.r * 0.3 + (big.g - 0.5) * 0.15);
-	dirt = mix(dirt, dirt * 0.5, vmask.a * (0.7 + mid.g * 0.5));
-	float pebble = smoothstep(0.62, 0.8, micro.a);
-	dirt = mix(dirt, mix(vec3(0.5, 0.48, 0.44), vec3(0.22, 0.2, 0.18), fine.a), pebble * 0.7);
-	// Patchy, dusty grass on the hump between the ruts (tufts are meshes).
-	float hump = exp(-pow(p.x / 0.25, 2.0)) * vmask.g;
-	float hump_grass = smoothstep(0.45, 0.8, hump * (0.4 + mid.r * 0.9)) * (0.5 + 0.5 * fine.r);
-	dirt = mix(dirt, mix(grass_color * 0.9, dirt, 0.35), hump_grass);
+	dirt = mix(dirt, dirt * 0.65, vmask.a * (0.7 + mid.g * 0.5));
+	float pebble = smoothstep(0.5, 0.75, micro.a);
+	dirt = mix(dirt, mix(vec3(0.55, 0.53, 0.5), vec3(0.2, 0.19, 0.18), fine.a), pebble * 0.85);
+	// Old asphalt also darkens a little in the sagging wheel tracks.
+	asph *= 1.0 - vmask.a * 0.12;
 
 	vec3 surface = mix(dirt, asph, asph_keep);
 

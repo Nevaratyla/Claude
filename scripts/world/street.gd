@@ -31,6 +31,7 @@ var pole_positions: Array[Vector3] = []
 var road: Road
 var granny: Dictionary = {}           # granny's plot (see _pick_granny)
 var lamp_heads: Array[Vector3] = []
+var chainlink_green: ShaderMaterial
 var _occluders: Array = []            # [Transform3D, Vector3 size]
 var draw_batches := 0
 
@@ -42,6 +43,12 @@ func build() -> void:
 	_layout_plots()
 	_pick_granny()
 	for p in plots:
+		if p.get("granny", false):
+			_granny_fence(p)
+			_side_fence(p)
+			_house(p)
+			_granny_yard(p)
+			continue
 		_plot_fence(p)
 		_side_fence(p)
 		if p.kind != "empty":
@@ -87,6 +94,10 @@ func _make_materials() -> void:
 	var cl := ShaderMaterial.new()
 	cl.shader = CHAINLINK
 	mk.add_material("chainlink", cl, true, 160.0)
+	chainlink_green = ShaderMaterial.new()
+	chainlink_green.shader = CHAINLINK
+	chainlink_green.set_shader_parameter("wire_color", Color(0.16, 0.42, 0.22))
+	mk.add_material("chainlink_green", chainlink_green, true, 160.0)
 	var w := ShaderMaterial.new()
 	w.shader = WINDOW
 	mk.add_material("glass", w, false, 300.0)
@@ -322,6 +333,16 @@ func _fence_run(style: String, a: Vector3, b: Vector3, d0: float, d1: float, p: 
 			var p0: Vector3 = at.call(d0, 0.05, 0.0)
 			var p1: Vector3 = at.call(d1, 0.05, 0.0)
 			mk.quad("chainlink", p0, p1, p1 + Vector3(0, h - 0.1, 0), p0 + Vector3(0, h - 0.1, 0))
+		"metal_picket":
+			# Green metal pickets with narrow gaps (granny's fence).
+			var green := Color(0.13, 0.36, 0.2)
+			_posts(a, dir, bs, d0, d1, 2.5, h, 0.06, "metal", green.darkened(0.2))
+			for ry: float in [0.3, h - 0.3]:
+				mk.box("metal", Transform3D(bs, at.call((d0 + d1) * 0.5, ry, 0.045)), Vector3(seg_len, 0.04, 0.02), green.darkened(0.25))
+			var dd := d0 + 0.07
+			while dd < d1 - 0.05:
+				mk.box("metal", Transform3D(bs, at.call(dd, h * 0.5 + 0.03, 0.0)), Vector3(0.115, h, 0.012), _jit(green, 0.04), 8)
+				dd += 0.14
 		"ranch":
 			_posts(a, dir, bs, d0, d1, 2.2, h, 0.1, "wood", cols.paint.darkened(0.2))
 			var y := 0.12
@@ -409,8 +430,10 @@ func _house(p: Dictionary) -> void:
 	var gable_to_street := rng.randf() < 0.55 or granny_house
 	var cz: float = p.z1 + plot_w * rng.randf_range(0.35, 0.65)
 	if granny_house:
-		cz = p.z1 + plot_w * 0.5
+		cz = p.z0 - 10.5
 	var cx := s * (FENCE_X + setback + (w if gable_to_street else d) * 0.5)
+	if granny_house:
+		cx = s * (FENCE_X + 11.0)
 	var ridge_dir := Vector3(s, 0, 0) if gable_to_street else Vector3(0, 0, -1)
 	var bs := run_basis(ridge_dir)   # local X along ridge, Z across span
 	var origin := Vector3(cx, 0, cz)
@@ -773,6 +796,137 @@ func _entrance() -> void:
 	add_child(l1)
 
 
+# ------------------------------------------------------------- granny plot
+# Layout from the user's sketch, seen from the wicket looking into the plot
+# (left = toward the village gate): car gate with a carport on the left, the
+# wicket, a spruce on each side of the path, the house a little to the right
+# with an extension on its left, the grape pergola deeper on the left, the
+# barbecue and the bathhouse at the back on the right, a spruce back left.
+
+## Plot-local point: u metres in from the street fence, v metres along the
+## fence from the plot's near corner (the end facing the village gate).
+func gp(p: Dictionary, u: float, v: float, y := 0.0) -> Vector3:
+	return Vector3(p.side * (FENCE_X + u), y, p.z0 - v)
+
+
+func _granny_fence(p: Dictionary) -> void:
+	var w: float = p.z0 - p.z1
+	var a := Vector3(-FENCE_X, 0, p.z1)
+	var b := Vector3(-FENCE_X, 0, p.z0)
+	var dir := (b - a).normalized()
+	var bs := run_basis(dir)
+	p.fh = 1.75
+	# Car gate v 0.6..3.6, wicket v 5.2..6.2 (d is measured from the far corner).
+	_fence_run("metal_picket", a, b, 0.0, w - 6.2, p)
+	_fence_run("metal_picket", a, b, w - 5.2, w - 3.6, p)
+	_fence_run("metal_picket", a, b, w - 0.6, w, p)
+	var green := Color(0.13, 0.36, 0.2)
+	for v: float in [0.6, 3.6, 5.2, 6.2]:
+		mk.box("metal", Transform3D(bs, gp(p, 0.0, v, 1.0)), Vector3(0.08, 2.0, 0.08), green.darkened(0.3))
+	# Car gate: two green mesh leaves, closed.
+	for leaf in 2:
+		var v0 := 0.65 + leaf * 1.5
+		var v1 := v0 + 1.4
+		_mesh_leaf(gp(p, 0.0, v0, 0.08), gp(p, 0.0, v1, 0.08), 1.65, green)
+	# Wicket: its own node so stage 4 can swing it open (inward, into the yard).
+	var hinge := gp(p, 0.0, 5.25, 0.08)
+	var wicket := Node3D.new()
+	wicket.name = "GrannyWicket"
+	wicket.position = hinge
+	add_child(wicket)
+	var frame := StandardMaterial3D.new()
+	frame.albedo_color = green.darkened(0.15)
+	frame.roughness = 0.5
+	frame.metallic = 0.4
+	var lw := 0.92
+	for e: Array in [[Vector3(0, 0.0, -lw * 0.5), Vector3(0.04, 0.04, lw)], [Vector3(0, 1.6, -lw * 0.5), Vector3(0.04, 0.04, lw)],
+			[Vector3(0, 0.8, 0.0), Vector3(0.04, 1.64, 0.04)], [Vector3(0, 0.8, -lw), Vector3(0.04, 1.64, 0.04)]]:
+		var mi := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = e[1]
+		mi.mesh = bm
+		mi.material_override = frame
+		mi.position = e[0]
+		wicket.add_child(mi)
+	var net := MeshInstance3D.new()
+	var q := QuadMesh.new()
+	q.size = Vector2(lw, 1.6)
+	net.mesh = q
+	net.material_override = chainlink_green
+	net.position = Vector3(0, 0.8, -lw * 0.5)
+	net.rotation.y = PI * 0.5
+	wicket.add_child(net)
+	p.wicket = wicket
+	p.gate_world = gp(p, 0.0, 5.7)
+
+
+func _mesh_leaf(a: Vector3, b: Vector3, h: float, col: Color) -> void:
+	var dir := (b - a).normalized()
+	var bs := run_basis(dir)
+	var l := a.distance_to(b)
+	var c := (a + b) * 0.5
+	for e: Array in [[Vector3(0, 0, 0), Vector3(l, 0.04, 0.04)], [Vector3(0, h, 0), Vector3(l, 0.04, 0.04)],
+			[Vector3(-l * 0.5, h * 0.5, 0), Vector3(0.04, h, 0.04)], [Vector3(l * 0.5, h * 0.5, 0), Vector3(0.04, h, 0.04)]]:
+		mk.box("metal", Transform3D(bs, c + bs * e[0]), e[1], col.darkened(0.15))
+	mk.quad("chainlink_green", a, b, b + Vector3(0, h, 0), a + Vector3(0, h, 0))
+
+
+func _granny_yard(p: Dictionary) -> void:
+	var w: float = p.z0 - p.z1
+	var into := Vector3(p.side, 0, 0)
+	var along := Vector3(0, 0, -1)
+	var green := Color(0.13, 0.36, 0.2)
+	# Carport over the driveway: four posts and a corrugated metal roof.
+	for u: float in [0.7, 6.2]:
+		for v: float in [0.5, 3.7]:
+			mk.box("metal", Transform3D(Basis(), gp(p, u, v, 1.22)), Vector3(0.08, 2.45, 0.08), Color(0.3, 0.3, 0.32))
+	var roof_b := run_basis(into) * Basis(Vector3.BACK, deg_to_rad(-4.0))
+	mk.box("metal_sheet", Transform3D(roof_b, gp(p, 3.45, 2.1, 2.47)), Vector3(6.1, 0.02, 3.8), green.darkened(0.1), 0)
+	mk.box("concrete", Transform3D(run_basis(into), gp(p, 3.4, 2.1, 0.02)), Vector3(6.0, 0.05, 3.4), Color(0.6, 0.6, 0.58))
+	p.carport = gp(p, 3.6, 2.1)
+	# Paving slabs from the wicket in toward the house.
+	var u := 0.5
+	while u < 8.4:
+		mk.box("concrete", Transform3D(run_basis(into), gp(p, u, 5.7, 0.025)), Vector3(0.55, 0.05, 0.55),
+			Color(0.66, 0.65, 0.62) * rng.randf_range(0.9, 1.05))
+		u += 0.65
+	# Extension on the left of the house, lean-to roof rising toward the house.
+	var hd: float = p.house.d
+	var ext_v := 10.5 - hd * 0.5 - 1.5
+	var eb := Transform3D(run_basis(into), gp(p, 11.0, ext_v))
+	mk.box("concrete", eb.translated_local(Vector3(0, 0.2, 0)), Vector3(4.2, 0.4, 3.1), Color(0.66, 0.65, 0.62))
+	mk.box("siding", eb.translated_local(Vector3(0, 0.4 + 1.1, 0)), Vector3(4.0, 2.2, 3.0), Color(0.86, 0.82, 0.66))
+	_roof(eb, 2.6, 4.0, [Vector2(-1.5, 0.0), Vector2(1.5, 0.55)] as Array[Vector2], "roof_tile", Color(0.12, 0.38, 0.2))
+	_window(eb, Vector3(0, 1.45, -1.505), Vector3.FORWARD, Vector3.RIGHT, 0.9, 1.0, Color(0.95, 0.95, 0.93), Color(0.6, 1.0, 0), false)
+	# Grape pergola deeper on the left: posts, beams, a lattice on top.
+	var pv0 := 3.4
+	var pv1 := 6.0
+	var pu := 14.5
+	while pu <= 20.01:
+		for v: float in [pv0, pv1]:
+			mk.box("wood", Transform3D(Basis(), gp(p, pu, v, 1.1)), Vector3(0.1, 2.2, 0.1), Color(0.42, 0.32, 0.22))
+		mk.box("wood", Transform3D(run_basis(along), gp(p, pu, (pv0 + pv1) * 0.5, 2.22)), Vector3(pv1 - pv0 + 0.3, 0.08, 0.06), Color(0.42, 0.32, 0.22))
+		pu += 1.375
+	for v: float in [pv0, pv0 + 0.87, pv0 + 1.73, pv1]:
+		mk.box("wood", Transform3D(run_basis(into), gp(p, 17.25, v, 2.28)), Vector3(5.8, 0.05, 0.05), Color(0.45, 0.35, 0.24))
+	p.pergola = {"c": gp(p, 17.25, (pv0 + pv1) * 0.5, 2.3), "su": 5.6, "sv": pv1 - pv0}
+	# Barbecue and bathhouse at the back on the right.
+	var mv := minf(14.0, w - 3.5)
+	var mb := Transform3D(run_basis(along), gp(p, 15.5, mv))
+	mk.box("brick", mb.translated_local(Vector3(0, 0.4, 0)), Vector3(1.0, 0.8, 0.6), Color(0.62, 0.3, 0.2))
+	mk.box("metal", mb.translated_local(Vector3(0, 0.88, 0)), Vector3(0.85, 0.16, 0.42), Color(0.12, 0.12, 0.12))
+	var bv := minf(15.8, w - 2.2)
+	var bb := Transform3D(run_basis(along), gp(p, 20.5, bv))
+	mk.box("concrete", bb.translated_local(Vector3(0, 0.15, 0)), Vector3(3.4, 0.3, 3.4), Color(0.6, 0.6, 0.58))
+	mk.box("siding", bb.translated_local(Vector3(0, 0.3 + 1.05, 0)), Vector3(3.2, 2.1, 3.2), Color(0.52, 0.36, 0.22))
+	_roof(bb, 2.4, 3.2, [Vector2(-1.6, 0), Vector2(0, 0.9), Vector2(1.6, 0)] as Array[Vector2], "slate", Color(1, 1, 1))
+	mk.cylinder("metal", Transform3D(Basis(), bb * Vector3(0.8, 2.6, 0.6)), 0.07, 0.07, 1.0, 8, Color(0.25, 0.25, 0.25))
+	mk.box("paint", bb.translated_local(Vector3(0, 1.3, -1.62)), Vector3(0.7, 1.7, 0.05), Color(0.38, 0.25, 0.15))
+	# Trees from the sketch (planted by Vegetation).
+	p.granny_trees = [["spruce", gp(p, 2.2, 4.35), 0.5], ["spruce", gp(p, 2.2, 7.1), 0.48],
+		["spruce", gp(p, 21.5, 1.8), 0.75], ["apple", gp(p, 24.0, 10.0), 1.0]]
+
+
 # ------------------------------------------------------------- granny decor
 
 ## Sunflowers along granny's fence and a pot of red geraniums by the porch.
@@ -792,7 +946,7 @@ func _granny_decor() -> void:
 	var root := Node3D.new()
 	root.name = "GrannyDecor"
 	add_child(root)
-	var z: float = granny.z0 - 1.5
+	var z: float = granny.z0 - 8.5
 	while z > granny.z1 + 1.0:
 		var h := rng.randf_range(1.7, 2.3)
 		var sf := Node3D.new()

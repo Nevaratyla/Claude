@@ -1,10 +1,11 @@
 class_name Road
 extends Node3D
-## The street floor between the fences as a real heightfield: old asphalt that
-## gives way to stretches of dirt road with wheel ruts, bumps and potholes
-## (puddles in the deep ones), a soil verge, and ground flush with the fences.
+## The street floor between the fences as a real heightfield: old, beaten
+## asphalt the whole way — bumps, sagging wheel tracks, cracks, potholes
+## (puddles in the deep ones), patches crumbled down to the gravel base — with
+## soil and grass only along the fences, flush with the yards.
 ## Surface info goes to the ground shader through vertex colour:
-## R carriageway, G dirt, B puddle, A rut.
+## R carriageway, G wear (crumbled asphalt), B puddle, A sagging wheel track.
 
 const HALF := 4.0                 # mesh spans x in [-HALF, HALF] (fence to fence)
 const DX := 0.2
@@ -16,11 +17,11 @@ var material: Material
 var mesh_chunks := 0
 var ditch_z := INF               # a washed-out channel across the street (stage 3)
 
-var _dirt_segments: Array[Vector2] = []     # (z_start, z_end), z_start > z_end
 var _potholes := {}                          # bucket (int) -> Array of [Vector2 xz, radius, depth, wet]
 var _n_large := FastNoiseLite.new()
 var _n_small := FastNoiseLite.new()
 var _n_edge := FastNoiseLite.new()
+var _n_wear := FastNoiseLite.new()
 var _rng := RandomNumberGenerator.new()
 var _tmp := PackedFloat32Array([0.0])
 
@@ -33,6 +34,8 @@ func _init() -> void:
 	_n_small.fractal_octaves = 2
 	_n_edge.seed = 13
 	_n_edge.frequency = 0.12
+	_n_wear.seed = 14
+	_n_wear.frequency = 0.025
 
 
 func build(top: float, bottom: float, mat: Material) -> void:
@@ -47,21 +50,8 @@ func build(top: float, bottom: float, mat: Material) -> void:
 # ------------------------------------------------------------------- layout
 
 func _layout() -> void:
-	# The entrance is asphalt (like the reference photo); further on the road
-	# alternates between worn asphalt and dirt.
-	# A first short dirt stretch right where the leaf quest happens.
-	_dirt_segments.append(Vector2(-18.0, -52.0))
-	# Washed-out dirt stretch around the ditch.
-	if ditch_z != INF:
-		_dirt_segments.append(Vector2(ditch_z + 14.0, ditch_z - 12.0))
-	var z := -52.0
-	while z > z_bottom:
-		var asphalt := _rng.randf_range(35.0, 80.0)
-		var dirt := _rng.randf_range(22.0, 55.0)
-		_dirt_segments.append(Vector2(z - asphalt, z - asphalt - dirt))
-		z -= asphalt + dirt
-	# Potholes: more and deeper on dirt stretches.
-	z = z_top - 5.0
+	# Potholes: more and deeper where the asphalt is most worn.
+	var z := z_top - 5.0
 	while z > z_bottom + 5.0:
 		var d := dirt_at(z)
 		if _rng.randf() < 0.25 + d * 0.6:
@@ -76,14 +66,13 @@ func _layout() -> void:
 		z -= _rng.randf_range(1.5, 5.0)
 
 
-## 0 = asphalt, 1 = dirt road, smooth 8 m transitions.
+## How worn the asphalt is: 0 = whole, 0.5 = crumbling down to the gravel in
+## patches. Varies slowly along the street; the ditch area is badly broken.
 func dirt_at(z: float) -> float:
-	var d := 0.0
-	for s in _dirt_segments:
-		if z < s.x + 8.0 and z > s.y - 8.0:
-			var a := clampf((s.x + 8.0 - z) / 8.0, 0.0, 1.0)
-			var b := clampf((z - (s.y - 8.0)) / 8.0, 0.0, 1.0)
-			d = maxf(d, minf(a, b))
+	var w := _n_wear.get_noise_1d(z) * 0.5 + 0.5
+	var d := clampf((w - 0.35) * 1.1, 0.0, 0.5)
+	if ditch_z != INF:
+		d = maxf(d, 0.5 * clampf(1.0 - absf(z - ditch_z) / 10.0, 0.0, 1.0))
 	return d
 
 
@@ -100,16 +89,15 @@ func sample(x: float, z: float, out: PackedFloat32Array) -> Color:
 	var dirt := dirt_at(z)
 	var t := clampf(ax / hw, 0.0, 1.0)
 	var h := 0.0
-	# Asphalt slab sits a few cm above the soil; dirt road is level with it.
-	h += road * lerpf(0.04, 0.01, dirt)
+	# Asphalt slab sits a few cm above the soil verge.
+	h += road * 0.04
 	h += road * 0.025 * (1.0 - t * t)                                   # crown
 	h += _n_large.get_noise_2d(x, z) * 0.07                              # long waves
 	var bumps := _n_small.get_noise_2d(x, z)
-	h += bumps * lerpf(0.012, 0.035, dirt) * road
-	# Wheel ruts and the grassy hump between them.
-	var rut := exp(-pow((ax - 0.85) / 0.22, 2.0)) * dirt * road
-	h -= 0.045 * rut
-	h += 0.018 * dirt * road * exp(-pow(x / 0.35, 2.0))
+	h += bumps * lerpf(0.016, 0.03, dirt * 2.0) * road
+	# Asphalt sags in the wheel tracks where it is worn.
+	var rut := exp(-pow((ax - 0.85) / 0.3, 2.0)) * dirt * 2.0 * road
+	h -= 0.03 * rut
 	# Verge: uneven soil.
 	h += (1.0 - road) * (0.02 + bumps * 0.025)
 	# Potholes.
