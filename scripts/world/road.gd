@@ -14,6 +14,7 @@ var z_top := 0.0
 var z_bottom := 0.0
 var material: Material
 var mesh_chunks := 0
+var ditch_z := INF               # a washed-out channel across the street (stage 3)
 
 var _dirt_segments: Array[Vector2] = []     # (z_start, z_end), z_start > z_end
 var _potholes := {}                          # bucket (int) -> Array of [Vector2 xz, radius, depth, wet]
@@ -50,6 +51,9 @@ func _layout() -> void:
 	# alternates between worn asphalt and dirt.
 	# A first short dirt stretch right where the leaf quest happens.
 	_dirt_segments.append(Vector2(-18.0, -52.0))
+	# Washed-out dirt stretch around the ditch.
+	if ditch_z != INF:
+		_dirt_segments.append(Vector2(ditch_z + 14.0, ditch_z - 12.0))
 	var z := -52.0
 	while z > z_bottom:
 		var asphalt := _rng.randf_range(35.0, 80.0)
@@ -123,6 +127,11 @@ func sample(x: float, z: float, out: PackedFloat32Array) -> Color:
 				h -= float(ph[2]) * k * (1.5 - 0.5 * k)
 				if ph[3]:
 					puddle = maxf(puddle, smoothstep(0.25, 0.55, k))
+	# The ditch: a 0.35 m deep channel with water in it, fence to fence.
+	if ditch_z != INF:
+		var k := exp(-pow((z - ditch_z) / 0.55, 2.0))
+		h -= 0.35 * k
+		puddle = maxf(puddle, smoothstep(0.35, 0.6, k))
 	# Flush with the flat yards at the fences and at both ends of the strip.
 	h *= 1.0 - smoothstep(3.55, 3.95, ax)
 	h *= clampf((z_top - z) / 3.0, 0.0, 1.0) * clampf((z - z_bottom) / 3.0, 0.0, 1.0)

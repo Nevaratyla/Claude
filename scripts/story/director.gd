@@ -15,6 +15,7 @@ var street: Street
 var cars: Cars
 var atmosphere: Atmosphere
 var stage2: Stage2
+var stage3: Stage3
 var pickups: Array[BurdockPickup] = []
 
 var _leaf_quest := false
@@ -88,13 +89,15 @@ func _update_leaf_objective() -> void:
 
 
 func _update_prompt() -> void:
-	if player.focus is BurdockPickup:
-		hud.set_prompt("[E]  Сорвать лист лопуха")
+	if player.focus and player.focus.has_method("prompt_text"):
+		hud.set_prompt("[E]  " + player.focus.prompt_text())
 	else:
 		hud.set_prompt("")
 
 
 func _on_interact(target: Node) -> void:
+	if stage3 and stage3.handle_interact(target):
+		return
 	if target is BurdockPickup:
 		(target as BurdockPickup).pick()
 		player.creature.happy = 1.0
@@ -137,8 +140,21 @@ func _stage_end() -> void:
 
 
 func _stage2_end() -> void:
-	hud.set_objective("Продолжение — этап 3: «Вечер»")
-	# The sun starts going down: a preview of the evening in stage 3.
-	create_tween().tween_property(atmosphere, "time_of_day", 0.75, 40.0)
+	# Crickets take over from the birds; Stage3 drives the sunset itself.
 	Audio.ambient("ambient_evening", -16.0, 30.0)
-	await hud.show_card("Конец второго этапа.\nДальше: вечер в посёлке, мини-задания и дом бабушки.", 3.5)
+	stage3 = Stage3.new()
+	stage3.name = "Stage3"
+	stage3.hud = hud
+	stage3.player = player
+	stage3.friend = friend
+	stage3.street = street
+	stage3.atmosphere = atmosphere
+	add_child(stage3)
+	stage3.finished.connect(_stage3_end)
+	await get_tree().create_timer(2.5, false).timeout
+	stage3.begin()
+
+
+func _stage3_end() -> void:
+	hud.set_objective("Продолжение — этап 4: «У бабушки»")
+	await hud.show_card("Конец третьего этапа.\nДальше: ключ под геранью, бабушка и горячий борщ.", 3.5)

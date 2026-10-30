@@ -141,4 +141,5 @@ func set_time_of_day(t: float) -> void:
 	env.fog_light_color = fog_col
 	env.volumetric_fog_albedo = fog_col
 	env.tonemap_exposure = lerpf(a.exp, b.exp, f)
-	RenderingServer.global_shader_parameter_set("g_daylight", lerpf(a.day, b.day, f))
+	Game.daylight = lerpf(a.day, b.day, f)
+	RenderingServer.global_shader_parameter_set("g_daylight", Game.daylight)

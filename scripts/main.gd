@@ -45,6 +45,10 @@ func _ready() -> void:
 	cars.build(street)
 	_spawn_pickups()
 	_spawn_heroes()
+	var evening := Evening.new()
+	evening.name = "Evening"
+	add_child(evening)
+	evening.build(street, player)
 	print("[world] built in %d ms, batches: %d, plots: %d, trees: %d, multimeshes: %d, burdocks: %d" % [
 		Time.get_ticks_msec() - t0, street.draw_batches, street.plots.size(), vegetation.tree_count,
 		vegetation.multimesh_count, vegetation.burdock_spots.size()])
@@ -213,6 +217,7 @@ func _test_stage2(cam: Camera3D) -> void:
 		waited += 1.0
 	print("[test] stage2 hidden: done=%s caught=%d %s" % [st.done, st.caught_count,
 		"PASS" if st.done and st.caught_count == 0 else "FAIL"])
+	await _test_stage3(cam)
 	# Second run: stand in the middle of the road.
 	player.force_crouch = false
 	director._stage_end()
@@ -224,3 +229,91 @@ func _test_stage2(cam: Camera3D) -> void:
 		waited += 1.0
 	print("[test] stage2 exposed: caught=%d %s" % [st2.caught_count, "PASS" if st2.caught_count > 0 else "FAIL"])
 	Engine.time_scale = 1.0
+
+
+## Stage 3: catch fireflies, carry and lay the plank, walk over it (real input),
+## Fialka follows, arrival at granny's gate ends the stage.
+func _test_stage3(cam: Camera3D) -> void:
+	var waited := 0.0
+	while (director.stage3 == null or director.stage3._phase != "fireflies") and waited < 40.0:
+		await get_tree().create_timer(0.5).timeout
+		waited += 0.5
+	var s3 := director.stage3
+	if s3 == null:
+		print("[test] FAIL: stage 3 did not start")
+		return
+	player.force_crouch = false
+	for f in s3._flies.duplicate():
+		if s3.fireflies_caught >= Stage3.FIREFLIES_NEEDED or not is_instance_valid(f):
+			break
+		player.global_position = Vector3(f._home.x * 0.85, street.height_at(f._home.x * 0.85, f._home.z) + 0.05, f._home.z)
+		for i in 6:
+			await get_tree().physics_frame
+		if player.focus is Firefly:
+			player.interacted.emit(player.focus)
+			await get_tree().create_timer(0.7).timeout
+	await get_tree().create_timer(1.0).timeout
+	print("[test] fireflies=%d %s" % [s3.fireflies_caught, "PASS" if s3.fireflies_caught >= Stage3.FIREFLIES_NEEDED else "FAIL"])
+	# Evening shot with the lamps on and the jar glowing.
+	s3.sun_tween.kill()
+	atmosphere.time_of_day = 1.4
+	rig.yaw = 0.0
+	rig.pitch = -0.1
+	player.global_position = Vector3(0.5, street.height_at(0.5, -125.0) + 0.05, -125.0)
+	await get_tree().create_timer(2.0).timeout
+	get_viewport().get_texture().get_image().save_png(_shot_dir.path_join("s3_evening.png"))
+	cam.make_current()
+	cam.global_position = Vector3(0.4, 2.2, -120.0)
+	cam.look_at(Vector3(-0.5, 1.0, -170.0))
+	await get_tree().create_timer(0.8).timeout
+	get_viewport().get_texture().get_image().save_png(_shot_dir.path_join("s3_dusk_street.png"))
+	rig.camera.make_current()
+	# Plank.
+	var pp: Vector3 = s3._plank.global_position
+	player.global_position = Vector3(pp.x + 0.5, street.height_at(pp.x + 0.5, pp.z) + 0.05, pp.z)
+	for i in 6:
+		await get_tree().physics_frame
+	if player.focus == s3._plank:
+		player.interacted.emit(s3._plank)
+	var sp: Vector3 = s3._plank_spot.global_position
+	player.global_position = Vector3(sp.x, street.height_at(sp.x, sp.z + 0.6) + 0.05, sp.z + 0.6)
+	for i in 6:
+		await get_tree().physics_frame
+	if player.focus == s3._plank_spot:
+		player.interacted.emit(s3._plank_spot)
+	await get_tree().create_timer(0.5).timeout
+	print("[test] plank placed: %s" % ("PASS" if s3.plank_placed else "FAIL"))
+	cam.make_current()
+	cam.global_position = Vector3(1.6, 1.0, Street.DITCH_Z + 2.5)
+	cam.look_at(Vector3(-0.9, 0.0, Street.DITCH_Z))
+	await get_tree().create_timer(0.6).timeout
+	get_viewport().get_texture().get_image().save_png(_shot_dir.path_join("s3_plank.png"))
+	rig.camera.make_current()
+	# Walk over it with real input: camera yaw 0 means forward is -Z.
+	player.global_position = Vector3(s3._plank.global_position.x, street.height_at(s3._plank.global_position.x, Street.DITCH_Z + 1.3) + 0.05, Street.DITCH_Z + 1.3)
+	player.rotation.y = 0.0
+	rig.yaw = 0.0
+	await get_tree().physics_frame
+	Input.action_press("move_forward")
+	await get_tree().create_timer(2.0).timeout
+	Input.action_release("move_forward")
+	print("[test] crossed ditch on the plank: %s (z=%.2f)" % ["PASS" if player.global_position.z < Street.DITCH_Z - 0.8 else "FAIL", player.global_position.z])
+	waited = 0.0
+	while friend.global_position.z > Street.DITCH_Z - 0.8 and waited < 25.0:
+		await get_tree().create_timer(0.5).timeout
+		waited += 0.5
+	print("[test] Fialka crossed: %s (z=%.2f)" % ["PASS" if friend.global_position.z < Street.DITCH_Z - 0.8 else "FAIL", friend.global_position.z])
+	# Granny's house.
+	var gate: Vector3 = street.granny.gate_world
+	cam.make_current()
+	cam.global_position = gate + Vector3(3.2, 1.2, 4.0)
+	cam.look_at(gate + Vector3(-6.0, 1.5, -1.0))
+	await get_tree().create_timer(0.6).timeout
+	get_viewport().get_texture().get_image().save_png(_shot_dir.path_join("s3_granny.png"))
+	rig.camera.make_current()
+	player.global_position = Vector3(-2.0, street.height_at(-2.0, gate.z) + 0.05, gate.z)
+	waited = 0.0
+	while not s3.done and waited < 10.0:
+		await get_tree().create_timer(0.5).timeout
+		waited += 0.5
+	print("[test] arrived at granny's: %s" % ("PASS" if s3.done else "FAIL"))

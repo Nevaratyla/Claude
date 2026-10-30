@@ -35,12 +35,13 @@ func set_first_person(on: bool) -> void:
 
 func _update_focus() -> void:
 	var best: Node3D = null
-	var best_d := 1.0
+	var best_d := 99.0
 	for n: Node3D in get_tree().get_nodes_in_group("interactable"):
 		if not n.visible:
 			continue
 		var d := n.global_position.distance_to(global_position + Vector3(0, 0.2, 0))
-		if d < best_d:
+		var reach: float = n.get("reach") if n.get("reach") != null else 1.0
+		if d < reach and d < best_d:
 			best_d = d
 			best = n
 	focus = best

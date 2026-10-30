@@ -12,6 +12,8 @@ const LENGTH := 1000.0
 const FENCE_X := 4.0
 const START_Z := 6.0
 const PLOT_DEPTH := 28.0
+const DITCH_Z := -150.0          # stage 3: washed-out ditch across the street
+const GRANNY_Z := -182.0         # stage 3/4: granny's plot (left side) spans this z
 
 const PROF_COLORS := [Color(0.12, 0.3, 0.19), Color(0.3, 0.18, 0.12), Color(0.45, 0.47, 0.48),
 	Color(0.16, 0.27, 0.45), Color(0.45, 0.11, 0.1), Color(0.62, 0.56, 0.45)]
@@ -27,6 +29,8 @@ var mk := MeshKit.new()
 var plots: Array[Dictionary] = []
 var pole_positions: Array[Vector3] = []
 var road: Road
+var granny: Dictionary = {}           # granny's plot (see _pick_granny)
+var lamp_heads: Array[Vector3] = []
 var _occluders: Array = []            # [Transform3D, Vector3 size]
 var draw_batches := 0
 
@@ -36,6 +40,7 @@ func build() -> void:
 	_make_materials()
 	_ground()
 	_layout_plots()
+	_pick_granny()
 	for p in plots:
 		_plot_fence(p)
 		_side_fence(p)
@@ -45,6 +50,7 @@ func build() -> void:
 	_poles_and_wires()
 	_entrance()
 	draw_batches = mk.build(self)
+	_granny_decor()
 	_collision()
 	_build_occluders()
 
@@ -129,6 +135,7 @@ func _ground() -> void:
 	road = Road.new()
 	road.name = "Road"
 	add_child(road)
+	road.ditch_z = DITCH_Z
 	road.build(top, bottom, mk.materials["ground"])
 	var none := Color(0, 0, 0, 0)
 	var z := top
@@ -174,6 +181,19 @@ func _layout_plots() -> void:
 
 ## Returns positions of front fence gate opening (distance along run) so houses
 ## and drives line up with them.
+## Granny's plot: on the left side where GRANNY_Z falls, always with a house
+## and a wooden picket fence.
+func _pick_granny() -> void:
+	for p in plots:
+		if p.side < 0 and p.z0 >= GRANNY_Z and p.z1 <= GRANNY_Z:
+			p.granny = true
+			p.kind = "house"
+			p.fence = "picket"
+			p.gate_at = 0.2
+			granny = p
+			return
+
+
 func _plot_fence(p: Dictionary) -> void:
 	var s: int = p.side
 	var a: Vector3
@@ -373,6 +393,10 @@ func _house(p: Dictionary) -> void:
 	var setback := rng.randf_range(6.0, 12.0)
 	var types := ["mansard", "gable", "gable", "old", "brick2"]
 	var t: String = _pick(types)
+	var granny_house: bool = p.get("granny", false)
+	if granny_house:
+		t = "old"
+		setback = 5.5
 	var w := rng.randf_range(5.5, 7.5)       # along ridge
 	var d := rng.randf_range(5.0, 6.8)       # span
 	var wall_h := rng.randf_range(2.5, 2.8)
@@ -382,8 +406,10 @@ func _house(p: Dictionary) -> void:
 		wall_h = 2.3
 	elif t == "brick2":
 		wall_h = 5.4
-	var gable_to_street := rng.randf() < 0.55
+	var gable_to_street := rng.randf() < 0.55 or granny_house
 	var cz: float = p.z1 + plot_w * rng.randf_range(0.35, 0.65)
+	if granny_house:
+		cz = p.z1 + plot_w * 0.5
 	var cx := s * (FENCE_X + setback + (w if gable_to_street else d) * 0.5)
 	var ridge_dir := Vector3(s, 0, 0) if gable_to_street else Vector3(0, 0, -1)
 	var bs := run_basis(ridge_dir)   # local X along ridge, Z across span
@@ -401,6 +427,11 @@ func _house(p: Dictionary) -> void:
 		wall_mat = "wood"
 		wall_col = _pick(PAINT_COLORS)
 	var roof_mat := "slate" if t == "old" or rng.randf() < 0.15 else "roof_tile"
+	if granny_house:
+		# Granny's: pale blue wooden house with a green metal roof, all windows lit.
+		wall_col = Color(0.55, 0.72, 0.82)
+		roof_mat = "roof_tile"
+		roof_col = Color(0.12, 0.38, 0.2)
 	if roof_mat == "slate":
 		roof_col = Color(1, 1, 1)
 
@@ -455,6 +486,8 @@ func _house(p: Dictionary) -> void:
 				var y := 0.4 + 0.95 + st * 2.7
 				if face < 2 or rng.randf() < 0.8:
 					var wc := Color(rng.randf(), wcols.g * float(rng.randf() < 0.7), 0)
+					if granny_house:
+						wc = Color(0.6, 1.0, 0)
 					_window(base, n_local * (off + 0.005) + along * u + Vector3(0, y, 0), n_local, along,
 						1.05, 1.3, frame_col, wc, t == "old")
 		# Attic window in the gables.
@@ -468,6 +501,9 @@ func _house(p: Dictionary) -> void:
 	var dpos := base * (to_street * (door_off + 0.04) + door_along * (0.35 * (w if absf(to_street.x) < 0.5 else d) * 0.5) + Vector3(0, 0.4 + 1.0, 0))
 	var dbs := run_basis(base.basis * door_along)
 	mk.box("paint", Transform3D(dbs, dpos), Vector3(0.9, 2.0, 0.06), Color(0.4, 0.26, 0.16))
+	p.house.door = dpos
+	p.house.porch = dpos + base.basis * to_street * 1.05 + Vector3(0, -1.4, 0)
+	p.house.to_street = base.basis * to_street
 	mk.box("concrete", Transform3D(dbs, dpos + base.basis * to_street * 0.5 + Vector3(0, -1.2, 0)),
 		Vector3(1.4, 0.4, 0.9), Color(0.7, 0.7, 0.68))
 	# Chimney.
@@ -646,12 +682,13 @@ func _poles_and_wires() -> void:
 		for k in 4:
 			var ins := p + tilt * Vector3(-0.2 + k * 0.25, heights[k] + (0.0 if k < 2 else 0.0), 0)
 			mk.cylinder("paint", Transform3D(tilt, ins - Vector3(0, 0.08, 0)), 0.03, 0.025, 0.1, 6, Color(0.92, 0.92, 0.9))
-		if i % 3 == 1:
-			# Street lamp arm over the road.
+		if i % 2 == 1:
+			# Street lamp arm over the road (lights are switched on by Evening).
 			var arm0 := p + tilt * Vector3(0, 7.2, 0)
 			var arm1 := arm0 + Vector3(1.6, 0.25, 0)
 			mk.box("metal", Transform3D(run_basis(Vector3(1, 0, 0)), (arm0 + arm1) * 0.5), Vector3(1.62, 0.05, 0.05), Color(0.35, 0.35, 0.35))
 			mk.box("paint", Transform3D(run_basis(Vector3(1, 0, 0)), arm1 + Vector3(0.15, -0.06, 0)), Vector3(0.5, 0.12, 0.22), Color(0.25, 0.27, 0.3))
+			lamp_heads.append(arm1 + Vector3(0.15, -0.13, 0))
 	# Catenary wires between poles.
 	for i in poles.size() - 1:
 		for k in 4:
@@ -734,6 +771,106 @@ func _entrance() -> void:
 	l1.shaded = true
 	l1.double_sided = false
 	add_child(l1)
+
+
+# ------------------------------------------------------------- granny decor
+
+## Sunflowers along granny's fence and a pot of red geraniums by the porch.
+func _granny_decor() -> void:
+	if granny.is_empty():
+		return
+	var stem_mat := StandardMaterial3D.new()
+	stem_mat.albedo_color = Color(0.3, 0.42, 0.14)
+	stem_mat.roughness = 0.8
+	var petal_mat := StandardMaterial3D.new()
+	petal_mat.albedo_color = Color(0.98, 0.78, 0.08)
+	petal_mat.roughness = 0.6
+	petal_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	var disk_mat := StandardMaterial3D.new()
+	disk_mat.albedo_color = Color(0.22, 0.13, 0.05)
+	disk_mat.roughness = 0.9
+	var root := Node3D.new()
+	root.name = "GrannyDecor"
+	add_child(root)
+	var z: float = granny.z0 - 1.5
+	while z > granny.z1 + 1.0:
+		var h := rng.randf_range(1.7, 2.3)
+		var sf := Node3D.new()
+		sf.position = Vector3(-(FENCE_X + 0.45), 0, z)
+		sf.rotation.y = rng.randf_range(-0.4, 0.4) + PI * 0.5   # faces the street
+		root.add_child(sf)
+		var stem := MeshInstance3D.new()
+		var cyl := CylinderMesh.new()
+		cyl.top_radius = 0.015
+		cyl.bottom_radius = 0.025
+		cyl.height = h
+		cyl.radial_segments = 6
+		stem.mesh = cyl
+		stem.material_override = stem_mat
+		stem.position.y = h * 0.5
+		sf.add_child(stem)
+		var head := Node3D.new()
+		head.position = Vector3(0, h, 0.04)
+		head.rotation.x = -0.35
+		sf.add_child(head)
+		var disk := MeshInstance3D.new()
+		var dm := CylinderMesh.new()
+		dm.top_radius = 0.11
+		dm.bottom_radius = 0.12
+		dm.height = 0.05
+		disk.mesh = dm
+		disk.material_override = disk_mat
+		disk.rotation.x = PI * 0.5
+		head.add_child(disk)
+		for k in 14:
+			var petal := MeshInstance3D.new()
+			var pm := QuadMesh.new()
+			pm.size = Vector2(0.05, 0.12)
+			petal.mesh = pm
+			petal.material_override = petal_mat
+			var a := TAU * k / 14.0
+			petal.position = Vector3(cos(a), sin(a), 0) * 0.17 + Vector3(0, 0, 0.02)
+			petal.rotation.z = a - PI * 0.5
+			head.add_child(petal)
+		z -= rng.randf_range(1.2, 2.0)
+	# Geranium pot on the porch step (the key is under it in stage 4).
+	var porch: Vector3 = granny.house.porch
+	var pot := Node3D.new()
+	pot.name = "Geranium"
+	var ts: Vector3 = granny.house.to_street
+	var side_off := Vector3(0, 0, 0.55) if absf(ts.x) > 0.5 else Vector3(0.55, 0, 0)
+	pot.position = porch + ts * 0.15 + side_off
+	root.add_child(pot)
+	var pm2 := CylinderMesh.new()
+	pm2.top_radius = 0.13
+	pm2.bottom_radius = 0.09
+	pm2.height = 0.2
+	var pmi := MeshInstance3D.new()
+	pmi.mesh = pm2
+	var clay := StandardMaterial3D.new()
+	clay.albedo_color = Color(0.68, 0.32, 0.18)
+	clay.roughness = 0.85
+	pmi.material_override = clay
+	pmi.position.y = 0.1
+	pot.add_child(pmi)
+	var leaf := StandardMaterial3D.new()
+	leaf.albedo_color = Color(0.2, 0.4, 0.14)
+	var flower := StandardMaterial3D.new()
+	flower.albedo_color = Color(0.9, 0.08, 0.12)
+	for k in 9:
+		var b := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 0.05 if k < 5 else 0.035
+		sm.height = sm.radius * 2.0
+		sm.radial_segments = 8
+		sm.rings = 4
+		b.mesh = sm
+		b.material_override = leaf if k < 5 else flower
+		var a := TAU * k / 5.0
+		b.position = Vector3(cos(a) * 0.07, 0.24 + (0.0 if k < 5 else 0.1), sin(a) * 0.07) if k < 5 \
+			else Vector3(cos(a) * 0.05, 0.33, sin(a) * 0.05)
+		pot.add_child(b)
+	granny.geranium = pot
 
 
 # ---------------------------------------------------------------- occlusion

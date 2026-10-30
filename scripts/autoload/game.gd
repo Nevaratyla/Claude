@@ -14,6 +14,7 @@ var leaves: int = 0
 var flags := {}
 
 var noise_texture: ImageTexture
+var daylight := 1.0             # 1 noon .. 0 night, set by Atmosphere (mirrors g_daylight)
 var _fps_label: Label
 
 ## Player options (pause menu). Saved next to the quality preset.

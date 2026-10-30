@@ -61,6 +61,10 @@ func _process(delta: float) -> void:
 	(_glint.material_override as StandardMaterial3D).albedo_color.a = 0.25 + pulse * 0.75
 
 
+func prompt_text() -> String:
+	return "Сорвать лист лопуха"
+
+
 func pick() -> void:
 	if picked:
 		return
