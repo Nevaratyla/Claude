@@ -1075,7 +1075,7 @@ func _granny_yard(p: Dictionary) -> void:
 	_outhouse(p, gp(p, 24.65, 18.2))
 	var c0 := 14.4
 	var cc := gp(p, 27.05, (c0 + vend) * 0.5)
-	var clen := (vend - c0) * p.vk - 0.15
+	var clen: float = (vend - c0) * p.vk - 0.15
 	var cb := Transform3D(bs, cc)
 	mk.box("wood", cb.translated_local(Vector3(0, 1.1, 0)), Vector3(1.6, 2.2, clen), Color(0.5, 0.4, 0.3))
 	mk.box("slate", Transform3D(bs * Basis(Vector3.BACK, deg_to_rad(-9.0)), cc + Vector3(0, 2.36, 0)), Vector3(2.0, 0.05, clen + 0.4), Color(1, 1, 1), 0)
@@ -1095,7 +1095,7 @@ func _granny_yard(p: Dictionary) -> void:
 	# Vegetable beds, long along the street.
 	for u: float in [3.4, 4.6, 5.8]:
 		var bc := gp(p, u, 15.3)
-		var bl := 5.8 * p.vk
+		var bl: float = 5.8 * p.vk
 		mk.box("soil", Transform3D(bs, bc + Vector3(0, 0.07, 0)), Vector3(0.8, 0.14, bl), Color(1, 1, 1))
 		for side: float in [-1.0, 1.0]:
 			mk.box("wood", Transform3D(bs, bc + bs * Vector3(side * 0.42, 0.09, 0)), Vector3(0.04, 0.18, bl + 0.08), Color(0.45, 0.36, 0.25))
