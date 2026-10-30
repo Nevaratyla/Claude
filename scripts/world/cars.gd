@@ -29,7 +29,7 @@ func build(street: Street) -> void:
 		verge_cars.append(car)
 	for p in street.plots:
 		if p.get("granny", false):
-			# Granny's old car under the carport, nose toward the house.
+			# Granny's old car under the carport beside the house, nose in.
 			var cp: Vector3 = p.carport
 			_spawn("sedan", cp, PI if p.side < 0 else 0.0)
 			continue

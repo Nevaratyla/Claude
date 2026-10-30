@@ -34,6 +34,19 @@ const SPECIES := {
 		"tile": 0, "leaf": Color(0.22, 0.38, 0.1), "autumn": 0.0, "bark": 9, "branches": 2, "flex": 0.2},
 	"potato": {"h": 0.5, "trunk_r": 0.01, "crown": "ell", "cr": 0.3, "cbase": 0.1, "cards": 40, "card": 0.25,
 		"tile": 0, "leaf": Color(0.2, 0.33, 0.1), "autumn": 0.03, "bark": 9, "branches": 3, "flex": 0.3},
+	# Granny's garden: berries show as round "fruit" on the leaf tile.
+	"cherry": {"h": 5.5, "trunk_r": 0.13, "crown": "ell", "cr": 2.4, "cbase": 0.3, "cards": 420, "card": 0.8,
+		"tile": 5, "leaf": Color(0.2, 0.32, 0.1), "autumn": 0.04, "bark": 9, "branches": 7, "flex": 0.3,
+		"fruit": Color(0.5, 0.02, 0.06)},
+	"raspberry": {"h": 1.6, "trunk_r": 0.012, "crown": "col", "cr": 0.38, "cbase": 0.15, "cards": 90, "card": 0.38,
+		"tile": 5, "leaf": Color(0.22, 0.36, 0.11), "autumn": 0.0, "bark": 9, "branches": 3, "flex": 0.35,
+		"fruit": Color(0.78, 0.08, 0.2)},
+	"currant": {"h": 1.25, "trunk_r": 0.015, "crown": "ell", "cr": 0.65, "cbase": 0.1, "cards": 120, "card": 0.42,
+		"tile": 5, "leaf": Color(0.2, 0.34, 0.11), "autumn": 0.0, "bark": 9, "branches": 5, "flex": 0.3,
+		"fruit": Color(0.06, 0.04, 0.1)},
+	"rose": {"h": 0.85, "trunk_r": 0.01, "crown": "ell", "cr": 0.3, "cbase": 0.2, "cards": 45, "card": 0.3,
+		"tile": 5, "leaf": Color(0.16, 0.3, 0.1), "autumn": 0.0, "bark": 9, "branches": 3, "flex": 0.25,
+		"fruit": Color(0.88, 0.1, 0.28)},
 	"lilac": {"h": 2.4, "trunk_r": 0.04, "crown": "ell", "cr": 1.3, "cbase": 0.12, "cards": 200, "card": 0.7,
 		"tile": 0, "leaf": Color(0.2, 0.33, 0.12), "autumn": 0.05, "bark": 9, "branches": 5, "flex": 0.3},
 }
@@ -54,22 +67,38 @@ var _cover: Array = []                       # [MultiMeshInstance3D, full draw d
 var _lumps: Array = []
 
 
-## Vine leaves and dark grape bunches on top of granny's pergola, with a few
-## shoots hanging down the posts.
+## Vine leaves and dark grape bunches over granny's pergola. An "arch"
+## pergola (a tunnel of hoops along X) gets vines over the top and down both
+## sides; a flat one gets a canopy with a few shoots hanging down.
 func _grape_canopy(pg: Dictionary) -> void:
 	var c: Vector3 = pg.c
 	var su: float = pg.su
 	var sv: float = pg.sv
+	var arch: bool = pg.get("arch", false)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for i in 420:
-		var hanging := i % 6 == 0
-		var p := c + Vector3(rng.randf_range(-su, su) * 0.5, rng.randf_range(-0.05, 0.12), rng.randf_range(-sv, sv) * 0.55)
-		if hanging:
-			p.y -= rng.randf_range(0.2, 0.9)
-		var n := (Vector3.UP + Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6))).normalized()
-		if hanging:
-			n = Vector3(rng.randf_range(-1, 1), 0.2, rng.randf_range(-1, 1)).normalized()
+	for i in (560 if arch else 420):
+		var p: Vector3
+		var n: Vector3
+		if arch:
+			var r: float = pg.r + rng.randf_range(0.0, 0.12)
+			var x := rng.randf_range(-su, su) * 0.5
+			if rng.randf() < 0.6:
+				var a := rng.randf() * PI
+				n = Vector3(0, sin(a), cos(a))
+				p = c + Vector3(x, pg.post_h, 0) + n * r
+			else:
+				var sd := -1.0 if rng.randf() < 0.5 else 1.0
+				n = Vector3(0, 0.3, sd).normalized()
+				p = c + Vector3(x, rng.randf_range(0.25, pg.post_h), sd * r)
+			n = (n + Vector3(rng.randf_range(-0.5, 0.5), rng.randf_range(-0.3, 0.5), rng.randf_range(-0.5, 0.5))).normalized()
+		else:
+			var hanging := i % 6 == 0
+			p = c + Vector3(rng.randf_range(-su, su) * 0.5, rng.randf_range(-0.05, 0.12), rng.randf_range(-sv, sv) * 0.55)
+			n = (Vector3.UP + Vector3(rng.randf_range(-0.6, 0.6), 0, rng.randf_range(-0.6, 0.6))).normalized()
+			if hanging:
+				p.y -= rng.randf_range(0.2, 0.9)
+				n = Vector3(rng.randf_range(-1, 1), 0.2, rng.randf_range(-1, 1)).normalized()
 		var t := n.cross(Vector3.FORWARD if absf(n.z) < 0.9 else Vector3.RIGHT).normalized()
 		var b := n.cross(t)
 		var s := rng.randf_range(0.35, 0.55)
@@ -190,6 +219,8 @@ func _leaf_mat(sp: String, d: Dictionary) -> ShaderMaterial:
 	m.set_shader_parameter("autumn", d.autumn)
 	m.set_shader_parameter("flex", d.flex)
 	m.set_shader_parameter("autumn_color", Color(0.95, 0.42, 0.06) if sp == "rowan" else Color(0.85, 0.62, 0.1))
+	if d.has("fruit"):
+		m.set_shader_parameter("fruit_color", d.fruit)
 	m.set_shader_parameter("translucency", 0.35 if d.tile in [2, 4] else 0.6)
 	# Thin needles lose coverage in the mipmaps; a lower cut keeps spruces full.
 	m.set_shader_parameter("alpha_cut", 0.25 if d.tile == 2 else 0.45)
@@ -333,7 +364,7 @@ func _place(street: Street) -> void:
 		var house_pos: Vector3 = p.house.pos if p.has("house") else Vector3(1e6, 0, 0)
 		var free := func(pos: Vector3, r: float) -> bool:
 			return Vector2(pos.x - house_pos.x, pos.z - house_pos.z).length() > 5.0 + r
-		# Granny's plot follows the sketch exactly: only its own trees, the vines.
+		# Granny's plot follows the approved plan: its own trees, bushes, roses, crops and the vines.
 		if p.get("granny", false):
 			for t: Array in p.granny_trees:
 				_add(t[0], t[1], t[2])
@@ -525,6 +556,8 @@ func _grass(street: Street) -> void:
 				# Keep the collectible burdocks in the open, not buried in grass.
 				if zz > -135.0 and _near_spot(x, zz, 0.7):
 					continue
+				if street.grass_blocked(x, zz):
+					continue
 				var near_fence := absf(x) > Street.FENCE_X - 0.5
 				var gy := street.height_at(x, zz) - 0.01
 				var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.7, 1.3)), Vector3(x, gy, zz))
@@ -601,6 +634,9 @@ func _ground_cover(street: Street) -> void:
 			var inside := bz > -130.0 or rng.randf() < 0.4
 			var x := side * (fx + rng.randf_range(0.3, 1.2) if inside else fx - rng.randf_range(0.35, 0.8))
 			var y := street.height_at(x, bz) - 0.02
+			if street.grass_blocked(x, bz):
+				bz -= rng.randf_range(3.0, 9.0)
+				continue
 			burd[rng.randi_range(0, 3)].append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.8, 1.25)), Vector3(x, y, bz)))
 			bz -= rng.randf_range(3.0, 9.0)
 		# Plantain and stones on the road; stones also on the gravel shoulder.

@@ -45,8 +45,7 @@ func build() -> void:
 	for p in plots:
 		if p.get("granny", false):
 			_granny_fence(p)
-			_side_fence(p)
-			_house(p)
+			_granny_house(p)
 			_granny_yard(p)
 			continue
 		_plot_fence(p)
@@ -192,15 +191,15 @@ func _layout_plots() -> void:
 
 ## Returns positions of front fence gate opening (distance along run) so houses
 ## and drives line up with them.
-## Granny's plot: on the left side where GRANNY_Z falls, always with a house
-## and a wooden picket fence.
+## Granny's plot: on the left side where GRANNY_Z falls, laid out by hand
+## (see the granny plot section).
 func _pick_granny() -> void:
 	for p in plots:
 		if p.side < 0 and p.z0 >= GRANNY_Z and p.z1 <= GRANNY_Z:
 			p.granny = true
 			p.kind = "house"
-			p.fence = "picket"
-			p.gate_at = 0.2
+			p.fence = "panel"
+			p.vk = (p.z0 - p.z1) / GRANNY_PLAN_W
 			granny = p
 			return
 
@@ -226,7 +225,7 @@ func _plot_fence(p: Dictionary) -> void:
 	p.gate_world = a.lerp(b, (gate_start + gate_len * 0.5) / length)
 
 
-func _side_fence(p: Dictionary) -> void:
+func _side_fence(p: Dictionary, style := "") -> void:
 	var s: int = p.side
 	var a := Vector3(s * FENCE_X, 0, p.z1)
 	var b := Vector3(s * (FENCE_X + PLOT_DEPTH), 0, p.z1)
@@ -234,7 +233,8 @@ func _side_fence(p: Dictionary) -> void:
 		var t := a
 		a = b
 		b = t
-	var style: String = "rabitsa" if rng.randf() < 0.55 else ("old" if rng.randf() < 0.5 else p.fence)
+	if style.is_empty():
+		style = "rabitsa" if rng.randf() < 0.55 else ("old" if rng.randf() < 0.5 else p.fence)
 	var sp := p.duplicate()
 	sp.fh = minf(p.fh, 1.7)
 	_fence_run(style, a, b, 0.0, a.distance_to(b), sp)
@@ -333,16 +333,25 @@ func _fence_run(style: String, a: Vector3, b: Vector3, d0: float, d1: float, p: 
 			var p0: Vector3 = at.call(d0, 0.05, 0.0)
 			var p1: Vector3 = at.call(d1, 0.05, 0.0)
 			mk.quad("chainlink", p0, p1, p1 + Vector3(0, h - 0.1, 0), p0 + Vector3(0, h - 0.1, 0))
-		"metal_picket":
-			# Green metal pickets with narrow gaps (granny's fence).
+		"panel":
+			# Granny's fence: green sections about 2 m wide between posts, each a
+			# framed rectangle of narrow metal pickets, a small gap between sections.
 			var green := Color(0.13, 0.36, 0.2)
-			_posts(a, dir, bs, d0, d1, 2.5, h, 0.06, "metal", green.darkened(0.2))
-			for ry: float in [0.3, h - 0.3]:
-				mk.box("metal", Transform3D(bs, at.call((d0 + d1) * 0.5, ry, 0.045)), Vector3(seg_len, 0.04, 0.02), green.darkened(0.25))
-			var dd := d0 + 0.07
-			while dd < d1 - 0.05:
-				mk.box("metal", Transform3D(bs, at.call(dd, h * 0.5 + 0.03, 0.0)), Vector3(0.115, h, 0.012), _jit(green, 0.04), 8)
-				dd += 0.14
+			var n := maxi(1, roundi(seg_len / 2.0))
+			var sl := seg_len / n
+			for i in n + 1:
+				mk.box("metal", Transform3D(bs, at.call(d0 + i * sl, (h + 0.1) * 0.5, 0.0)), Vector3(0.06, h + 0.1, 0.06), green.darkened(0.3))
+			for i in n:
+				var s0 := d0 + i * sl + 0.07
+				var s1 := d0 + (i + 1) * sl - 0.07
+				for ry: float in [0.12, h - 0.04]:
+					mk.box("metal", Transform3D(bs, at.call((s0 + s1) * 0.5, ry, 0.025)), Vector3(s1 - s0, 0.04, 0.025), green.darkened(0.2))
+				for rx: float in [s0, s1]:
+					mk.box("metal", Transform3D(bs, at.call(rx, (h + 0.08) * 0.5, 0.025)), Vector3(0.035, h - 0.08, 0.025), green.darkened(0.2))
+				var dd := s0 + 0.1
+				while dd < s1 - 0.06:
+					mk.box("metal", Transform3D(bs, at.call(dd, (h + 0.08) * 0.5, 0.0)), Vector3(0.1, h - 0.12, 0.012), _jit(green, 0.04), 8)
+					dd += 0.14
 		"ranch":
 			_posts(a, dir, bs, d0, d1, 2.2, h, 0.1, "wood", cols.paint.darkened(0.2))
 			var y := 0.12
@@ -414,10 +423,6 @@ func _house(p: Dictionary) -> void:
 	var setback := rng.randf_range(6.0, 12.0)
 	var types := ["mansard", "gable", "gable", "old", "brick2"]
 	var t: String = _pick(types)
-	var granny_house: bool = p.get("granny", false)
-	if granny_house:
-		t = "old"
-		setback = 5.5
 	var w := rng.randf_range(5.5, 7.5)       # along ridge
 	var d := rng.randf_range(5.0, 6.8)       # span
 	var wall_h := rng.randf_range(2.5, 2.8)
@@ -427,13 +432,9 @@ func _house(p: Dictionary) -> void:
 		wall_h = 2.3
 	elif t == "brick2":
 		wall_h = 5.4
-	var gable_to_street := rng.randf() < 0.55 or granny_house
+	var gable_to_street := rng.randf() < 0.55
 	var cz: float = p.z1 + plot_w * rng.randf_range(0.35, 0.65)
-	if granny_house:
-		cz = p.z0 - 10.5
 	var cx := s * (FENCE_X + setback + (w if gable_to_street else d) * 0.5)
-	if granny_house:
-		cx = s * (FENCE_X + 11.0)
 	var ridge_dir := Vector3(s, 0, 0) if gable_to_street else Vector3(0, 0, -1)
 	var bs := run_basis(ridge_dir)   # local X along ridge, Z across span
 	var origin := Vector3(cx, 0, cz)
@@ -450,11 +451,6 @@ func _house(p: Dictionary) -> void:
 		wall_mat = "wood"
 		wall_col = _pick(PAINT_COLORS)
 	var roof_mat := "slate" if t == "old" or rng.randf() < 0.15 else "roof_tile"
-	if granny_house:
-		# Granny's: pale blue wooden house with a green metal roof, all windows lit.
-		wall_col = Color(0.55, 0.72, 0.82)
-		roof_mat = "roof_tile"
-		roof_col = Color(0.12, 0.38, 0.2)
 	if roof_mat == "slate":
 		roof_col = Color(1, 1, 1)
 
@@ -509,8 +505,6 @@ func _house(p: Dictionary) -> void:
 				var y := 0.4 + 0.95 + st * 2.7
 				if face < 2 or rng.randf() < 0.8:
 					var wc := Color(rng.randf(), wcols.g * float(rng.randf() < 0.7), 0)
-					if granny_house:
-						wc = Color(0.6, 1.0, 0)
 					_window(base, n_local * (off + 0.005) + along * u + Vector3(0, y, 0), n_local, along,
 						1.05, 1.3, frame_col, wc, t == "old")
 		# Attic window in the gables.
@@ -797,45 +791,76 @@ func _entrance() -> void:
 
 
 # ------------------------------------------------------------- granny plot
-# Layout from the user's sketch, seen from the wicket looking into the plot
-# (left = toward the village gate): car gate with a carport on the left, the
-# wicket, a spruce on each side of the path, the house a little to the right
-# with an extension on its left, the grape pergola deeper on the left, the
-# barbecue and the bathhouse at the back on the right, a spruce back left.
+# Layout follows the user's approved plan (v4), seen from the street with the
+# village gate on the left. u: metres in from the street fence, v: metres
+# along it from the corner facing the village gate. The plan is 20 m wide;
+# the real plot is a little wider, so v is stretched by p.vk.
+#
+#   street fence: car gate v 0.6-3.6, wicket v 9.4-10.4, both open inward;
+#   driveway and carport on the left; two spruces left of the wicket, one
+#   right of it; brick house with the extension behind it under one roof;
+#   tiled path from the wicket up the right side of the house under a grape
+#   arch, then left into the extension door and diagonally to the back;
+#   rose bed behind the extension; swings, pull-up bar, trampoline, gazebo
+#   with a rounded yellow roof, currants on the left; bath yard with the log
+#   bathhouse, barbecue and table on the right; washbasin, shower and a small
+#   shed along the back path; outhouse and the winter-toilet corridor along
+#   the back fence; vegetable beds, raspberries and a cherry over the fence.
 
-## Plot-local point: u metres in from the street fence, v metres along the
-## fence from the plot's near corner (the end facing the village gate).
+const GRANNY_PLAN_W := 20.0
+const GRANNY_GREEN := Color(0.13, 0.36, 0.2)
+
+
+## Plot-local point (see above).
 func gp(p: Dictionary, u: float, v: float, y := 0.0) -> Vector3:
-	return Vector3(p.side * (FENCE_X + u), y, p.z0 - v)
+	return Vector3(p.side * (FENCE_X + u), y, p.z0 - v * p.get("vk", 1.0))
+
+
+## World-aligned box over the plan rectangle u0..u1 × v0..v1, from y0 up by h.
+func _gbox(p: Dictionary, mat: String, u0: float, v0: float, u1: float, v1: float, y0: float, h: float,
+		col: Color, skip := 8) -> void:
+	mk.box(mat, Transform3D(Basis(), gp(p, (u0 + u1) * 0.5, (v0 + v1) * 0.5, y0 + h * 0.5)),
+		Vector3(u1 - u0, h, (v1 - v0) * p.vk), col, skip)
+
+
+## Cylinder between two world points.
+func _rod(mat: String, a: Vector3, b: Vector3, r: float, col: Color, segs := 6) -> void:
+	var y := (b - a).normalized()
+	var x := y.cross(Vector3.UP if absf(y.y) < 0.95 else Vector3.RIGHT).normalized()
+	mk.cylinder(mat, Transform3D(Basis(x, y, x.cross(y)), a), r, r, a.distance_to(b), segs, col)
+
+
+## Basis with X into the plot (along u); on the left side Z points toward growing v.
+func _gbasis(p: Dictionary) -> Basis:
+	return run_basis(Vector3(p.side, 0, 0))
 
 
 func _granny_fence(p: Dictionary) -> void:
 	var w: float = p.z0 - p.z1
+	var vk: float = p.vk
 	var a := Vector3(-FENCE_X, 0, p.z1)
 	var b := Vector3(-FENCE_X, 0, p.z0)
-	var dir := (b - a).normalized()
-	var bs := run_basis(dir)
 	p.fh = 1.75
-	# Car gate v 0.6..3.6, wicket v 5.2..6.2 (d is measured from the far corner).
-	_fence_run("metal_picket", a, b, 0.0, w - 6.2, p)
-	_fence_run("metal_picket", a, b, w - 5.2, w - 3.6, p)
-	_fence_run("metal_picket", a, b, w - 0.6, w, p)
-	var green := Color(0.13, 0.36, 0.2)
-	for v: float in [0.6, 3.6, 5.2, 6.2]:
-		mk.box("metal", Transform3D(bs, gp(p, 0.0, v, 1.0)), Vector3(0.08, 2.0, 0.08), green.darkened(0.3))
-	# Car gate: two green mesh leaves, closed.
-	for leaf in 2:
-		var v0 := 0.65 + leaf * 1.5
-		var v1 := v0 + 1.4
-		_mesh_leaf(gp(p, 0.0, v0, 0.08), gp(p, 0.0, v1, 0.08), 1.65, green)
+	# Distance along the run is measured from the far corner: d = w - v * vk.
+	for r: Array in [[0.0, 0.6], [3.6, 9.4], [10.4, GRANNY_PLAN_W]]:
+		_fence_run("panel", a, b, w - r[1] * vk, w - r[0] * vk, p)
+	# Back fence (run reversed so the rails face into the plot) and far side.
+	var back := FENCE_X + PLOT_DEPTH
+	_fence_run("panel", Vector3(-back, 0, p.z0), Vector3(-back, 0, p.z1), 0.0, w, p)
+	_side_fence(p, "panel")
+	var bs := run_basis(b - a)
+	for v: float in [0.6, 3.6, 9.4, 10.4]:
+		mk.box("metal", Transform3D(bs, gp(p, 0.0, v, 1.0)), Vector3(0.08, 2.0, 0.08), GRANNY_GREEN.darkened(0.3))
+	# Car gate: two green mesh leaves, closed (they swing inward, toward the house).
+	_mesh_leaf(gp(p, 0.0, 0.65, 0.08), gp(p, 0.0, 2.08, 0.08), 1.65, GRANNY_GREEN)
+	_mesh_leaf(gp(p, 0.0, 2.12, 0.08), gp(p, 0.0, 3.55, 0.08), 1.65, GRANNY_GREEN)
 	# Wicket: its own node so stage 4 can swing it open (inward, into the yard).
-	var hinge := gp(p, 0.0, 5.25, 0.08)
 	var wicket := Node3D.new()
 	wicket.name = "GrannyWicket"
-	wicket.position = hinge
+	wicket.position = gp(p, 0.0, 9.45, 0.08)
 	add_child(wicket)
 	var frame := StandardMaterial3D.new()
-	frame.albedo_color = green.darkened(0.15)
+	frame.albedo_color = GRANNY_GREEN.darkened(0.15)
 	frame.roughness = 0.5
 	frame.metallic = 0.4
 	var lw := 0.92
@@ -857,7 +882,7 @@ func _granny_fence(p: Dictionary) -> void:
 	net.rotation.y = PI * 0.5
 	wicket.add_child(net)
 	p.wicket = wicket
-	p.gate_world = gp(p, 0.0, 5.7)
+	p.gate_world = gp(p, 0.0, 9.9)
 
 
 func _mesh_leaf(a: Vector3, b: Vector3, h: float, col: Color) -> void:
@@ -871,122 +896,412 @@ func _mesh_leaf(a: Vector3, b: Vector3, h: float, col: Color) -> void:
 	mk.quad("chainlink_green", a, b, b + Vector3(0, h, 0), a + Vector3(0, h, 0))
 
 
+## Brick house with the extension behind it, both under one gable roof whose
+## gable faces the street. The door is in the extension's right wall, where
+## the path turns left after the grape arch.
+func _granny_house(p: Dictionary) -> void:
+	var bs := _gbasis(p)
+	var base := Transform3D(bs, gp(p, 9.8, 6.6))
+	var wall_h := 2.6
+	var top := 0.4 + wall_h
+	var length := 9.6                  # u 5.0 .. 14.6
+	var half := 2.4                    # width 4.8 across v
+	var brick_col := Color(0.6, 0.29, 0.2)
+	var ext_col := Color(0.88, 0.84, 0.7)
+	var roof_col := Color(0.36, 0.14, 0.11)
+	mk.box("concrete", base.translated_local(Vector3(0, 0.2, 0)), Vector3(length + 0.12, 0.4, half * 2.0 + 0.12), Color(0.66, 0.65, 0.62))
+	mk.box("brick", base.translated_local(Vector3(-2.2, 0.4 + wall_h * 0.5, 0)), Vector3(5.2, wall_h, half * 2.0), brick_col)
+	mk.box("siding", base.translated_local(Vector3(2.6, 0.4 + wall_h * 0.5, 0)), Vector3(4.4, wall_h, half * 2.0 - 0.02), ext_col)
+	_occlude(base.translated_local(Vector3(0, 0.4 + wall_h * 0.5, 0)), Vector3(length - 0.1, wall_h, half * 2.0 - 0.1))
+	var prof: Array[Vector2] = [Vector2(-half, 0), Vector2(0, half * tan(deg_to_rad(35.0))), Vector2(half, 0)]
+	_roof(base, top, length, prof, "roof_tile", roof_col)
+	for end: int in [-1, 1]:
+		var ex := end * length * 0.5
+		var cen := base * Vector3(ex, top, 0)
+		for i in prof.size() - 1:
+			_tri_out("brick" if end < 0 else "siding", cen, base * Vector3(ex, top + prof[i].y, prof[i].x),
+				base * Vector3(ex, top + prof[i + 1].y, prof[i + 1].x), bs.x * end, brick_col if end < 0 else ext_col)
+	var frame_col := Color(0.95, 0.95, 0.93)
+	var lit := Color(0.6, 1.0, 0)
+	var win := func(c: Vector3, n: Vector3, along: Vector3, ww: float, wh: float) -> void:
+		_window(base, c, n, along, ww, wh, frame_col, lit, false)
+	# Street gable: two windows and an attic window; back gable: one of each.
+	for z: float in [-1.2, 1.2]:
+		win.call(Vector3(-length * 0.5 - 0.005, 1.35, z), Vector3.LEFT, Vector3.BACK, 1.05, 1.3)
+	win.call(Vector3(-length * 0.5 - 0.005, top + 0.55, 0), Vector3.LEFT, Vector3.BACK, 0.7, 0.8)
+	win.call(Vector3(length * 0.5 + 0.005, 1.35, -1.1), Vector3.RIGHT, Vector3.BACK, 1.05, 1.3)
+	win.call(Vector3(length * 0.5 + 0.005, top + 0.55, 0), Vector3.RIGHT, Vector3.BACK, 0.7, 0.8)
+	# Long walls: right (+Z, toward the path) and left.
+	win.call(Vector3(-2.2, 1.35, half + 0.005), Vector3.BACK, Vector3.RIGHT, 1.05, 1.3)
+	win.call(Vector3(3.3, 1.35, half + 0.005), Vector3.BACK, Vector3.RIGHT, 1.5, 1.2)
+	win.call(Vector3(-2.2, 1.35, -half - 0.005), Vector3.FORWARD, Vector3.RIGHT, 1.05, 1.3)
+	win.call(Vector3(2.6, 1.35, -half - 0.005), Vector3.FORWARD, Vector3.RIGHT, 1.5, 1.2)
+	# Door at u 10.9 with a concrete step.
+	var dpos := base * Vector3(1.1, 0.4 + 1.0, half + 0.04)
+	mk.box("paint", Transform3D(bs, dpos), Vector3(0.9, 2.0, 0.06), Color(0.4, 0.26, 0.16))
+	mk.box("metal", Transform3D(bs, dpos + bs.z * 0.05 + bs.x * 0.32), Vector3(0.12, 0.03, 0.03), Color(0.75, 0.7, 0.5))
+	mk.box("concrete", Transform3D(bs, base * Vector3(1.1, 0.2, half + 0.5)), Vector3(1.4, 0.4, 0.9), Color(0.7, 0.7, 0.68))
+	# Sink in the extension's top-right corner (seen through the windows; stage 4 interior).
+	var sink := base * Vector3(4.35, 0, half - 0.35)
+	mk.box("paint", Transform3D(bs, sink + Vector3(0, 0.82, 0)), Vector3(0.5, 0.8, 0.5), Color(0.92, 0.92, 0.9))
+	mk.box("metal", Transform3D(bs, sink + Vector3(0, 1.24, 0)), Vector3(0.46, 0.06, 0.42), Color(0.75, 0.76, 0.78))
+	# Chimney over the brick part.
+	var peak := top + prof[1].y
+	mk.box("brick", Transform3D(bs, base * Vector3(-2.8, (top + peak + 1.0) * 0.5 + 0.5, 0.6)), Vector3(0.45, peak - top + 1.0, 0.45), brick_col.darkened(0.1))
+	var out := bs.z
+	p.house = {"type": "brick", "pos": base.origin, "basis": bs, "w": length, "d": half * 2.0,
+		"door": dpos, "porch": dpos + out * 1.05 + Vector3(0, -1.4, 0), "to_street": out}
+
+
+## Paving slabs along a polyline of plan points.
+func _slab_path(p: Dictionary, pts: Array) -> void:
+	for i in pts.size() - 1:
+		var a := gp(p, pts[i].x, pts[i].y, 0.025)
+		var b := gp(p, pts[i + 1].x, pts[i + 1].y, 0.025)
+		var l := a.distance_to(b)
+		var n := maxi(1, ceili(l / 0.6))
+		var bs := run_basis(b - a)
+		for k in n:
+			mk.box("concrete", Transform3D(bs, a.lerp(b, (k + 0.5) / n)), Vector3(l / n - 0.05, 0.05, 0.85),
+				Color(0.66, 0.64, 0.6) * rng.randf_range(0.88, 1.05))
+		p.no_grass_segs.append([a, b])
+
+
 func _granny_yard(p: Dictionary) -> void:
-	var w: float = p.z0 - p.z1
-	var into := Vector3(p.side, 0, 0)
-	var along := Vector3(0, 0, -1)
-	var green := Color(0.13, 0.36, 0.2)
-	# Carport over the driveway: four posts and a corrugated metal roof.
-	for u: float in [0.7, 6.2]:
+	var bs := _gbasis(p)
+	var wood := Color(0.45, 0.33, 0.22)
+	var dark_wood := Color(0.33, 0.24, 0.16)
+	p.no_grass_rects = []
+	p.no_grass_segs = []
+	p.granny_trees = []
+	var plant := func(sp: String, u: float, v: float, sc: float) -> void:
+		p.granny_trees.append([sp, gp(p, u, v), sc])
+
+	# Driveway, parking and the carport parallel to the house.
+	_gbox(p, "concrete", 0.0, 0.6, 5.0, 3.6, 0.0, 0.05, Color(0.62, 0.62, 0.6))
+	_gbox(p, "concrete", 5.0, 0.4, 10.6, 3.8, 0.0, 0.05, Color(0.6, 0.6, 0.58))
+	p.no_grass_rects.append([0.0, 0.4, 10.6, 3.8])
+	for u: float in [5.1, 10.5]:
 		for v: float in [0.5, 3.7]:
 			mk.box("metal", Transform3D(Basis(), gp(p, u, v, 1.22)), Vector3(0.08, 2.45, 0.08), Color(0.3, 0.3, 0.32))
-	var roof_b := run_basis(into) * Basis(Vector3.BACK, deg_to_rad(-4.0))
-	mk.box("metal_sheet", Transform3D(roof_b, gp(p, 3.45, 2.1, 2.47)), Vector3(6.1, 0.02, 3.8), green.darkened(0.1), 0)
-	mk.box("concrete", Transform3D(run_basis(into), gp(p, 3.4, 2.1, 0.02)), Vector3(6.0, 0.05, 3.4), Color(0.6, 0.6, 0.58))
-	p.carport = gp(p, 3.6, 2.1)
-	# Paving slabs from the wicket in toward the house.
-	var u := 0.5
-	while u < 8.4:
-		mk.box("concrete", Transform3D(run_basis(into), gp(p, u, 5.7, 0.025)), Vector3(0.55, 0.05, 0.55),
-			Color(0.66, 0.65, 0.62) * rng.randf_range(0.9, 1.05))
-		u += 0.65
-	# Extension on the left of the house, lean-to roof rising toward the house.
-	var hd: float = p.house.d
-	var ext_v := 10.5 - hd * 0.5 - 1.5
-	var eb := Transform3D(run_basis(into), gp(p, 11.0, ext_v))
-	mk.box("concrete", eb.translated_local(Vector3(0, 0.2, 0)), Vector3(4.2, 0.4, 3.1), Color(0.66, 0.65, 0.62))
-	mk.box("siding", eb.translated_local(Vector3(0, 0.4 + 1.1, 0)), Vector3(4.0, 2.2, 3.0), Color(0.86, 0.82, 0.66))
-	_roof(eb, 2.6, 4.0, [Vector2(-1.5, 0.0), Vector2(1.5, 0.55)] as Array[Vector2], "roof_tile", Color(0.12, 0.38, 0.2))
-	_window(eb, Vector3(0, 1.45, -1.505), Vector3.FORWARD, Vector3.RIGHT, 0.9, 1.0, Color(0.95, 0.95, 0.93), Color(0.6, 1.0, 0), false)
-	# Grape pergola deeper on the left: posts, beams, a lattice on top.
-	var pv0 := 3.4
-	var pv1 := 6.0
-	var pu := 14.5
-	while pu <= 20.01:
-		for v: float in [pv0, pv1]:
-			mk.box("wood", Transform3D(Basis(), gp(p, pu, v, 1.1)), Vector3(0.1, 2.2, 0.1), Color(0.42, 0.32, 0.22))
-		mk.box("wood", Transform3D(run_basis(along), gp(p, pu, (pv0 + pv1) * 0.5, 2.22)), Vector3(pv1 - pv0 + 0.3, 0.08, 0.06), Color(0.42, 0.32, 0.22))
-		pu += 1.375
-	for v: float in [pv0, pv0 + 0.87, pv0 + 1.73, pv1]:
-		mk.box("wood", Transform3D(run_basis(into), gp(p, 17.25, v, 2.28)), Vector3(5.8, 0.05, 0.05), Color(0.45, 0.35, 0.24))
-	p.pergola = {"c": gp(p, 17.25, (pv0 + pv1) * 0.5, 2.3), "su": 5.6, "sv": pv1 - pv0}
-	# Barbecue and bathhouse at the back on the right.
-	var mv := minf(14.0, w - 3.5)
-	var mb := Transform3D(run_basis(along), gp(p, 15.5, mv))
-	mk.box("brick", mb.translated_local(Vector3(0, 0.4, 0)), Vector3(1.0, 0.8, 0.6), Color(0.62, 0.3, 0.2))
-	mk.box("metal", mb.translated_local(Vector3(0, 0.88, 0)), Vector3(0.85, 0.16, 0.42), Color(0.12, 0.12, 0.12))
-	var bv := minf(15.8, w - 2.2)
-	var bb := Transform3D(run_basis(along), gp(p, 20.5, bv))
-	mk.box("concrete", bb.translated_local(Vector3(0, 0.15, 0)), Vector3(3.4, 0.3, 3.4), Color(0.6, 0.6, 0.58))
-	mk.box("siding", bb.translated_local(Vector3(0, 0.3 + 1.05, 0)), Vector3(3.2, 2.1, 3.2), Color(0.52, 0.36, 0.22))
-	_roof(bb, 2.4, 3.2, [Vector2(-1.6, 0), Vector2(0, 0.9), Vector2(1.6, 0)] as Array[Vector2], "slate", Color(1, 1, 1))
-	mk.cylinder("metal", Transform3D(Basis(), bb * Vector3(0.8, 2.6, 0.6)), 0.07, 0.07, 1.0, 8, Color(0.25, 0.25, 0.25))
-	mk.box("paint", bb.translated_local(Vector3(0, 1.3, -1.62)), Vector3(0.7, 1.7, 0.05), Color(0.38, 0.25, 0.15))
-	# Trees from the sketch (planted by Vegetation).
-	p.granny_trees = [["spruce", gp(p, 2.2, 4.35), 0.5], ["spruce", gp(p, 2.2, 7.1), 0.48],
-		["spruce", gp(p, 21.5, 1.8), 0.75], ["apple", gp(p, 24.0, 10.0), 1.0]]
+	mk.box("metal_sheet", Transform3D(bs * Basis(Vector3.RIGHT, deg_to_rad(4.0)), gp(p, 7.8, 2.1, 2.47)),
+		Vector3(5.9, 0.02, 3.9), GRANNY_GREEN.darkened(0.1), 0)
+	p.carport = gp(p, 7.8, 2.1)
+
+	# Paths: wicket straight in, a small jog right, along the house under the
+	# arch, left into the extension door; from the corner diagonally to the back.
+	_slab_path(p, [Vector2(0.2, 9.9), Vector2(4.4, 9.9), Vector2(5.2, 10.6), Vector2(10.9, 10.6), Vector2(10.9, 9.0)])
+	_slab_path(p, [Vector2(10.9, 10.6), Vector2(14.6, 13.8), Vector2(27.1, 13.8)])
+	p.no_grass_rects.append([5.0, 4.2, 14.6, 9.0])
+
+	# Grape arch over the path: four hoops joined by laths, vines on top and sides.
+	var ar := 0.72
+	var post_h := 1.7
+	var hoop := func(u: float) -> Array:
+		var pts: Array = [gp(p, u, 10.6, 0.0) + Vector3(0, 0, ar), gp(p, u, 10.6, post_h) + Vector3(0, 0, ar)]
+		for k in range(1, 8):
+			var a := PI * k / 8.0
+			pts.append(gp(p, u, 10.6, post_h + sin(a) * ar) + Vector3(0, 0, cos(a) * ar))
+		pts.append(gp(p, u, 10.6, post_h) - Vector3(0, 0, ar))
+		pts.append(gp(p, u, 10.6, 0.0) - Vector3(0, 0, ar))
+		return pts
+	var hoops: Array = []
+	for u: float in [6.2, 7.4, 8.6, 9.8]:
+		var pts: Array = hoop.call(u)
+		for k in pts.size() - 1:
+			_rod("metal", pts[k], pts[k + 1], 0.022, Color(0.22, 0.24, 0.22))
+		hoops.append(pts)
+	for k: int in [1, 3, 5, 7, 9]:
+		_rod("wood", hoops[0][k], hoops[3][k], 0.02, wood)
+	p.pergola = {"c": gp(p, 8.0, 10.6), "su": 4.0, "sv": ar * 2.0, "arch": true, "r": ar, "post_h": post_h}
+
+	# Rose bed right behind the extension, with a brick edge.
+	var rb := Transform3D(bs, gp(p, 15.5, 6.6))
+	mk.box("soil", rb.translated_local(Vector3(0, 0.06, 0)), Vector3(1.7, 0.12, 4.7), Color(1, 1, 1))
+	for e: Array in [[Vector3(-0.87, 0.08, 0), Vector3(0.1, 0.16, 4.84)], [Vector3(0.87, 0.08, 0), Vector3(0.1, 0.16, 4.84)],
+			[Vector3(0, 0.08, -2.4), Vector3(1.64, 0.16, 0.1)], [Vector3(0, 0.08, 2.4), Vector3(1.64, 0.16, 0.1)]]:
+		mk.box("brick", rb.translated_local(e[0]), e[1], Color(0.62, 0.3, 0.22))
+	for i in 3:
+		for k in 9:
+			p.granny_trees.append(["rose", rb * Vector3(-0.5 + i * 0.5 + rng.randf_range(-0.08, 0.08), 0.1, -2.0 + k * 0.5),
+				rng.randf_range(0.8, 1.15)])
+
+	# Water pipe along the ground from the back fence to a tap by the rose bed.
+	_rod("metal", gp(p, 16.7, 6.2, 0.04), gp(p, 27.8, 6.2, 0.04), 0.022, Color(0.2, 0.22, 0.24))
+	_rod("metal", gp(p, 16.7, 6.2, 0.02), gp(p, 16.7, 6.2, 0.7), 0.022, Color(0.2, 0.22, 0.24))
+	mk.box("metal", Transform3D(bs, gp(p, 16.64, 6.2, 0.66)), Vector3(0.12, 0.04, 0.04), Color(0.7, 0.62, 0.3))
+	mk.box("paint", Transform3D(bs, gp(p, 16.7, 6.2, 0.78)), Vector3(0.05, 0.03, 0.12), Color(0.75, 0.1, 0.08))
+
+	# Swings (A-frames), pull-up bar on their right, trampoline with a net.
+	var blue := Color(0.15, 0.32, 0.6)
+	for v: float in [7.0, 8.7]:
+		for du: float in [-0.65, 0.65]:
+			_rod("paint", gp(p, 19.4 + du, v, 0.0), gp(p, 19.4, v, 2.15), 0.035, blue)
+	_rod("paint", gp(p, 19.4, 7.0, 2.15), gp(p, 19.4, 8.7, 2.15), 0.04, blue)
+	for dv: float in [-0.28, 0.28]:
+		_rod("metal", gp(p, 19.4, 7.85, 2.12) - Vector3(0, 0, dv), gp(p, 19.4, 7.85, 0.48) - Vector3(0, 0, dv), 0.008, Color(0.5, 0.5, 0.5), 4)
+	mk.box("wood", Transform3D(bs, gp(p, 19.4, 7.85, 0.46)), Vector3(0.24, 0.035, 0.66), Color(0.62, 0.42, 0.24))
+	for v: float in [8.95, 9.95]:
+		_rod("paint", gp(p, 19.4, v, 0.0), gp(p, 19.4, v, 2.25), 0.035, Color(0.45, 0.47, 0.5))
+	_rod("metal", gp(p, 19.4, 8.95, 2.15), gp(p, 19.4, 9.95, 2.15), 0.016, Color(0.7, 0.7, 0.72))
+	_trampoline(gp(p, 21.3, 9.7))
+
+	# Gazebo with a rounded yellow roof; currants along the fence on its left.
+	_gazebo(p, gp(p, 25.0, 3.8))
+	for i in 7:
+		plant.call("currant", 20.6 + i * 0.95, 0.75, rng.randf_range(0.85, 1.15))
+
+	# Bath yard: paved, the log bathhouse at the far fence, barbecue and table.
+	var vend: float = GRANNY_PLAN_W
+	_gbox(p, "concrete", 19.0, 14.1, 24.0, vend, 0.0, 0.04, Color(0.7, 0.68, 0.63))
+	_banya(p, gp(p, 20.8, vend - 1.85 / p.vk))
+	var mg := gp(p, 19.6, 14.9)
+	for du: float in [-0.12, 0.12]:
+		for dv: float in [-0.42, 0.42]:
+			_rod("metal", mg + Vector3(du * p.side, 0, -dv), mg + Vector3(du * p.side, 0.62, -dv), 0.012, Color(0.1, 0.1, 0.1), 4)
+	mk.box("metal", Transform3D(bs, mg + Vector3(0, 0.72, 0)), Vector3(0.32, 0.2, 1.0), Color(0.12, 0.12, 0.12))
+	var tb := gp(p, 19.8, 16.05)
+	mk.box("wood", Transform3D(bs, tb + Vector3(0, 0.74, 0)), Vector3(0.9, 0.04, 0.8), wood)
+	for du: float in [-0.38, 0.38]:
+		for dv: float in [-0.33, 0.33]:
+			mk.box("wood", Transform3D(bs, tb + bs * Vector3(du, 0.36, dv)), Vector3(0.05, 0.72, 0.05), dark_wood)
+	var bench := tb + bs.x * 0.85
+	mk.box("wood", Transform3D(bs, bench + Vector3(0, 0.44, 0)), Vector3(0.3, 0.04, 1.1), wood)
+	for dv: float in [-0.45, 0.45]:
+		mk.box("wood", Transform3D(bs, bench + bs * Vector3(0, 0.21, dv)), Vector3(0.26, 0.42, 0.05), dark_wood)
+
+	# Outhouse next to the bath yard; the winter-toilet corridor along the back
+	# fence (junk inside, the toilet itself at the far end).
+	_outhouse(p, gp(p, 24.65, 18.2))
+	var c0 := 14.4
+	var cc := gp(p, 27.05, (c0 + vend) * 0.5)
+	var clen := (vend - c0) * p.vk - 0.15
+	var cb := Transform3D(bs, cc)
+	mk.box("wood", cb.translated_local(Vector3(0, 1.1, 0)), Vector3(1.6, 2.2, clen), Color(0.5, 0.4, 0.3))
+	mk.box("slate", Transform3D(bs * Basis(Vector3.BACK, deg_to_rad(-9.0)), cc + Vector3(0, 2.36, 0)), Vector3(2.0, 0.05, clen + 0.4), Color(1, 1, 1), 0)
+	mk.box("paint", cb.translated_local(Vector3(-0.1, 1.0, -clen * 0.5 - 0.03)), Vector3(0.8, 1.9, 0.05), dark_wood)
+	mk.box("glass", cb.translated_local(Vector3(-0.81, 1.6, clen * 0.5 - 0.6)), Vector3(0.02, 0.3, 0.4), Color(0.2, 0, 0))
+	_rod("metal", cb * Vector3(0.3, 2.2, clen * 0.5 - 0.5), cb * Vector3(0.3, 2.9, clen * 0.5 - 0.5), 0.05, Color(0.3, 0.3, 0.3))
+
+	# Along the back path: washbasin, shower backing onto the small shed.
+	_washbasin(p, gp(p, 23.7, 12.0))
+	_shower(p)
+	var sc := gp(p, 27.08, 12.05)
+	var sb := Transform3D(bs, sc)
+	mk.box("wood", sb.translated_local(Vector3(0, 1.05, 0)), Vector3(1.55, 2.1, 1.9), Color(0.55, 0.45, 0.33))
+	mk.box("slate", Transform3D(bs * Basis(Vector3.BACK, deg_to_rad(-10.0)), sc + Vector3(0, 2.25, 0)), Vector3(1.95, 0.05, 2.25), Color(1, 1, 1), 0)
+	mk.box("paint", sb.translated_local(Vector3(0, 0.95, 0.975)), Vector3(0.7, 1.8, 0.05), dark_wood)
+
+	# Vegetable beds, long along the street.
+	for u: float in [3.4, 4.6, 5.8]:
+		var bc := gp(p, u, 15.3)
+		var bl := 5.8 * p.vk
+		mk.box("soil", Transform3D(bs, bc + Vector3(0, 0.07, 0)), Vector3(0.8, 0.14, bl), Color(1, 1, 1))
+		for side: float in [-1.0, 1.0]:
+			mk.box("wood", Transform3D(bs, bc + bs * Vector3(side * 0.42, 0.09, 0)), Vector3(0.04, 0.18, bl + 0.08), Color(0.45, 0.36, 0.25))
+			mk.box("wood", Transform3D(bs, bc + bs * Vector3(0, 0.09, side * (bl * 0.5 + 0.02))), Vector3(0.8, 0.18, 0.04), Color(0.45, 0.36, 0.25))
+		var crop := "tomato" if u > 5.0 else "potato"
+		var k := 0.3
+		while k < bl - 0.2:
+			p.granny_trees.append([crop, bc + bs * Vector3(0, 0.12, k - bl * 0.5), rng.randf_range(0.55, 0.7) if crop == "tomato" else rng.randf_range(0.8, 1.2)])
+			k += 0.45 if crop == "potato" else 0.6
+	p.no_grass_rects.append([3.0, 12.4, 6.2, 18.2])
+
+	# Raspberries along the street fence and the back fence.
+	var v := 12.2
+	while v < 18.5:
+		plant.call("raspberry", 0.6 + rng.randf_range(-0.1, 0.1), v, rng.randf_range(0.8, 1.15))
+		v += 0.45
+	v = 6.9
+	while v < 10.6:
+		plant.call("raspberry", 27.4 + rng.randf_range(-0.1, 0.1), v, rng.randf_range(0.8, 1.15))
+		v += 0.45
+	# Trees.
+	for t: Array in [["spruce", 1.5, 5.4, 0.42], ["spruce", 1.5, 7.5, 0.45], ["spruce", 2.3, 11.3, 0.4],
+			["spruce", 12.6, 2.1, 0.5], ["spruce", 18.0, 1.7, 0.6],
+			["apple", 12.0, 16.8, 0.85], ["apple", 24.0, 9.0, 0.72], ["apple", 17.4, 10.0, 0.6],
+			["cherry", 1.0, 19.0, 1.0]]:
+		plant.call(t[0], t[1], t[2], t[3])
+
+
+func _trampoline(c: Vector3) -> void:
+	var blue := Color(0.12, 0.35, 0.7)
+	for k in 6:
+		var a := TAU * k / 6.0
+		var d := Vector3(cos(a), 0, sin(a)) * 1.38
+		_rod("metal", c + d, c + d + Vector3(0, 0.55, 0), 0.02, Color(0.4, 0.4, 0.42), 5)
+	mk.cylinder("paint", Transform3D(Basis(), c + Vector3(0, 0.5, 0)), 1.45, 1.45, 0.07, 20, blue)
+	mk.cylinder("paint", Transform3D(Basis(), c + Vector3(0, 0.57, 0)), 1.22, 1.22, 0.012, 20, Color(0.06, 0.06, 0.07))
+	var poles: Array[Vector3] = []
+	for k in 8:
+		var a := TAU * (k + 0.5) / 8.0
+		var d := Vector3(cos(a), 0, sin(a)) * 1.45
+		_rod("paint", c + d + Vector3(0, 0.55, 0), c + d + Vector3(0, 2.25, 0), 0.025, blue, 5)
+		poles.append(c + d)
+	for k in 8:
+		var a := poles[k]
+		var b := poles[(k + 1) % 8]
+		mk.quad("chainlink", a + Vector3(0, 0.6, 0), b + Vector3(0, 0.6, 0), b + Vector3(0, 2.2, 0), a + Vector3(0, 2.2, 0))
+
+
+## Square gazebo on a wooden deck under a low rounded (domed) yellow roof.
+func _gazebo(p: Dictionary, c: Vector3) -> void:
+	var bs := _gbasis(p)
+	var wood := Color(0.55, 0.4, 0.26)
+	mk.box("wood", Transform3D(bs, c + Vector3(0, 0.08, 0)), Vector3(4.2, 0.16, 4.2), Color(0.5, 0.38, 0.26))
+	var h := 2.2
+	for i in 3:
+		for k in 3:
+			if i == 1 and k == 1:
+				continue
+			mk.box("wood", Transform3D(bs, c + bs * Vector3(-1.95 + i * 1.95, 0.16 + h * 0.5, -1.95 + k * 1.95)), Vector3(0.1, h, 0.1), wood)
+	# Ring beam and railings (open toward the house).
+	for e: Array in [[Vector3(-1.95, 0, 0), Vector3(0.1, 0, 4.0)], [Vector3(1.95, 0, 0), Vector3(0.1, 0, 4.0)],
+			[Vector3(0, 0, -1.95), Vector3(4.0, 0, 0.1)], [Vector3(0, 0, 1.95), Vector3(4.0, 0, 0.1)]]:
+		mk.box("wood", Transform3D(bs, c + bs * (e[0] + Vector3(0, 0.16 + h - 0.06, 0))), e[1] + Vector3(0, 0.12, 0), wood.darkened(0.1))
+		if e[0].x > -1.0:
+			mk.box("wood", Transform3D(bs, c + bs * (e[0] + Vector3(0, 0.95, 0))), e[1] + Vector3(0, 0.07, 0), wood)
+	# Table and benches.
+	mk.box("wood", Transform3D(bs, c + Vector3(0, 0.9, 0)), Vector3(1.6, 0.05, 0.9), Color(0.6, 0.44, 0.28))
+	mk.box("wood", Transform3D(bs, c + Vector3(0, 0.52, 0)), Vector3(0.12, 0.72, 0.12), wood.darkened(0.2))
+	for z: float in [-0.85, 0.85]:
+		mk.box("wood", Transform3D(bs, c + bs * Vector3(0, 0.6, z)), Vector3(1.6, 0.05, 0.32), Color(0.6, 0.44, 0.28))
+		mk.box("wood", Transform3D(bs, c + bs * Vector3(0, 0.38, z)), Vector3(0.08, 0.44, 0.28), wood.darkened(0.2))
+	# Dome: outer shell and a darker inner shell so it reads from underneath too.
+	var yellow := Color(0.96, 0.78, 0.16)
+	var top := c + Vector3(0, 0.16 + h, 0)
+	var radius := 3.0
+	var rise := 1.25
+	var rings := 6
+	var segs := 24
+	var pt := func(i: int, j: int, r: float) -> Vector3:
+		var ph := PI * 0.5 * i / rings
+		var th := TAU * j / segs
+		return top + Vector3(sin(ph) * cos(th) * r, cos(ph) * rise * (r / radius), sin(ph) * sin(th) * r)
+	for i in rings:
+		for j in segs:
+			for shell: Array in [[radius, 1.0, yellow], [radius - 0.05, -1.0, yellow.darkened(0.35)]]:
+				var r: float = shell[0]
+				var a: Vector3 = pt.call(i, j, r)
+				var b: Vector3 = pt.call(i + 1, j, r)
+				var cc: Vector3 = pt.call(i + 1, j + 1, r)
+				var d: Vector3 = pt.call(i, j + 1, r)
+				var outward: Vector3 = ((a + cc) * 0.5 - top).normalized() * float(shell[1])
+				_tri_out("paint", a, b, cc, outward, shell[2])
+				if i > 0:
+					_tri_out("paint", a, cc, d, outward, shell[2])
+	mk.cylinder("metal", Transform3D(Basis(), top + Vector3(0, rise, 0)), 0.05, 0.01, 0.4, 6, Color(0.7, 0.6, 0.3))
+
+
+## Log bathhouse with a gable roof, metal chimney, the door toward the path.
+func _banya(p: Dictionary, c: Vector3) -> void:
+	var bs := _gbasis(p)
+	var base := Transform3D(bs, c)
+	var half := 1.6
+	var log_col := Color(0.6, 0.45, 0.28)
+	mk.box("concrete", base.translated_local(Vector3(0, 0.12, 0)), Vector3(3.3, 0.24, 3.3), Color(0.62, 0.62, 0.6))
+	var r := 0.11
+	for k in 9:
+		var y := 0.24 + r + k * r * 1.9
+		var ext := 0.18 if k % 2 == 0 else 0.1
+		for s: float in [-1.0, 1.0]:
+			_rod("wood", base * Vector3(-half - ext, y, s * half), base * Vector3(half + ext, y, s * half), r, log_col * rng.randf_range(0.9, 1.08), 7)
+			_rod("wood", base * Vector3(s * half, y + r * 0.95, -half - ext), base * Vector3(s * half, y + r * 0.95, half + ext), r, log_col * rng.randf_range(0.9, 1.08), 7)
+	mk.box("wood", base.translated_local(Vector3(0, 1.2, 0)), Vector3(half * 2.0 - 0.1, 1.9, half * 2.0 - 0.1), log_col.darkened(0.3))
+	var top := 0.24 + 9 * r * 1.9 + r
+	var prof: Array[Vector2] = [Vector2(-half - 0.1, 0), Vector2(0, 1.0), Vector2(half + 0.1, 0)]
+	_roof(base, top, half * 2.0 + 0.2, prof, "slate", Color(1, 1, 1))
+	for end: int in [-1, 1]:
+		var ex := end * (half + 0.02)
+		_tri_out("wood", base * Vector3(ex, top, -half), base * Vector3(ex, top, half), base * Vector3(ex, top + 0.95, 0),
+			bs.x * end, log_col.darkened(0.1))
+	# Door and a small window on the wall facing the path (lower v).
+	mk.box("paint", base.translated_local(Vector3(0.4, 1.05, -half - 0.12)), Vector3(0.75, 1.7, 0.05), Color(0.36, 0.24, 0.14))
+	_window(base, Vector3(-0.8, 1.5, -half - 0.115), Vector3.FORWARD, Vector3.RIGHT, 0.45, 0.35, Color(0.4, 0.28, 0.18), Color(0.4, 0.0, 0), false)
+	_rod("metal", base * Vector3(0.7, top + 0.3, 0.5), base * Vector3(0.7, top + 1.6, 0.5), 0.08, Color(0.25, 0.25, 0.25), 8)
+
+
+## Small wooden outhouse with a lean-to roof and a heart in the door.
+func _outhouse(p: Dictionary, c: Vector3) -> void:
+	var bs := _gbasis(p)
+	var b := Transform3D(bs, c)
+	mk.box("wood", b.translated_local(Vector3(0, 1.0, 0)), Vector3(1.15, 2.0, 1.15), Color(0.52, 0.4, 0.28))
+	mk.box("slate", Transform3D(bs * Basis(Vector3.RIGHT, deg_to_rad(10.0)), c + Vector3(0, 2.1, 0)), Vector3(1.45, 0.04, 1.5), Color(1, 1, 1), 0)
+	mk.box("paint", b.translated_local(Vector3(0, 0.95, -0.6)), Vector3(0.7, 1.8, 0.04), Color(0.4, 0.3, 0.2))
+	mk.box("glass", b.translated_local(Vector3(0, 1.55, -0.625)), Vector3(0.14, 0.12, 0.01), Color(0.15, 0, 0))
+
+
+## Dacha washbasin ("moydodyr"): a cabinet with a basin and a tank on a back board.
+func _washbasin(p: Dictionary, c: Vector3) -> void:
+	var bs := _gbasis(p)
+	var b := Transform3D(bs, c)
+	mk.box("paint", b.translated_local(Vector3(0, 0.4, 0)), Vector3(0.55, 0.8, 0.45), Color(0.85, 0.88, 0.9))
+	mk.box("metal", b.translated_local(Vector3(0, 0.83, 0.02)), Vector3(0.5, 0.06, 0.4), Color(0.8, 0.82, 0.84))
+	mk.box("paint", b.translated_local(Vector3(0, 1.2, -0.21)), Vector3(0.55, 0.8, 0.04), Color(0.85, 0.88, 0.9))
+	mk.box("metal", b.translated_local(Vector3(0, 1.38, -0.08)), Vector3(0.42, 0.34, 0.22), Color(0.75, 0.77, 0.8))
+	mk.box("glass", b.translated_local(Vector3(0, 1.0, -0.185)), Vector3(0.3, 0.2, 0.01), Color(0.3, 0, 0))
+	_rod("metal", b * Vector3(0, 1.21, 0.0), b * Vector3(0, 1.1, 0.0), 0.012, Color(0.6, 0.6, 0.6), 5)
+
+
+## Summer shower: two thin metal plates (right and front), a yellow curtain on
+## the left, the shed wall behind; two big canisters on top with a tap.
+func _shower(p: Dictionary) -> void:
+	var bs := _gbasis(p)
+	var c := gp(p, 25.55, 12.0)
+	var b := Transform3D(bs, c)
+	var hu := 0.75
+	var hv := 0.7
+	var h := 2.0
+	for du: float in [-hu, hu]:
+		for dv: float in [-hv, hv]:
+			mk.box("metal", b.translated_local(Vector3(du, h * 0.5, dv)), Vector3(0.04, h, 0.04), Color(0.35, 0.36, 0.38))
+	var plate := Color(0.62, 0.64, 0.66)
+	mk.box("metal_sheet", b.translated_local(Vector3(0, 1.05, hv)), Vector3(hu * 2.0, 1.75, 0.004), plate, 0)
+	mk.box("metal_sheet", b.translated_local(Vector3(-hu, 1.05, 0)), Vector3(0.004, 1.75, hv * 2.0), plate, 0)
+	# Curtain on the left: a few offset folds.
+	for k in 5:
+		mk.box("paint", b.translated_local(Vector3(-hu + 0.15 + k * 0.3, 1.1, -hv - 0.02 + (k % 2) * 0.04)),
+			Vector3(0.32, 1.6, 0.02), Color(0.95, 0.8, 0.15) * (0.92 if k % 2 == 0 else 1.0))
+	mk.box("wood", b.translated_local(Vector3(0, 0.04, 0)), Vector3(hu * 2.0, 0.08, hv * 2.0), Color(0.5, 0.4, 0.28))
+	# Slats on top and two canisters.
+	for k in 4:
+		mk.box("wood", b.translated_local(Vector3(-hu + 0.2 + k * 0.37, h + 0.02, 0)), Vector3(0.1, 0.04, hv * 2.0 + 0.1), Color(0.5, 0.4, 0.28))
+	for dz: float in [-0.3, 0.3]:
+		mk.box("paint", b.translated_local(Vector3(0, h + 0.27, dz)), Vector3(0.7, 0.46, 0.45), Color(0.1, 0.25, 0.55))
+		mk.cylinder("paint", Transform3D(bs, b * Vector3(0.22, h + 0.5, dz)), 0.06, 0.06, 0.07, 8, Color(0.85, 0.85, 0.2))
+	_rod("metal", b * Vector3(0, h, 0), b * Vector3(0, h - 0.25, 0), 0.015, Color(0.6, 0.6, 0.6), 5)
+	mk.cylinder("metal", Transform3D(Basis(), b * Vector3(0, h - 0.32, 0)), 0.09, 0.03, 0.08, 10, Color(0.65, 0.65, 0.65))
+
+
+## True when grass should not grow at this point of granny's plot (paths,
+## driveway, house, beds).
+func grass_blocked(x: float, z: float) -> bool:
+	if granny.is_empty() or z > granny.z0 or z < granny.z1 or signf(x) != float(granny.side):
+		return false
+	var u := absf(x) - FENCE_X
+	var v: float = (granny.z0 - z) / granny.vk
+	for r: Array in granny.no_grass_rects:
+		if u > r[0] and u < r[2] and v > r[1] and v < r[3]:
+			return true
+	var q := Vector2(x, z)
+	for s: Array in granny.no_grass_segs:
+		var a := Vector2(s[0].x, s[0].z)
+		var b := Vector2(s[1].x, s[1].z)
+		var t := clampf((q - a).dot(b - a) / maxf((b - a).length_squared(), 0.0001), 0.0, 1.0)
+		if q.distance_to(a.lerp(b, t)) < 0.6:
+			return true
+	return false
 
 
 # ------------------------------------------------------------- granny decor
 
-## Sunflowers along granny's fence and a pot of red geraniums by the porch.
+## A pot of red geraniums by the extension door (the key is under it in stage 4).
 func _granny_decor() -> void:
 	if granny.is_empty():
 		return
-	var stem_mat := StandardMaterial3D.new()
-	stem_mat.albedo_color = Color(0.3, 0.42, 0.14)
-	stem_mat.roughness = 0.8
-	var petal_mat := StandardMaterial3D.new()
-	petal_mat.albedo_color = Color(0.98, 0.78, 0.08)
-	petal_mat.roughness = 0.6
-	petal_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	var disk_mat := StandardMaterial3D.new()
-	disk_mat.albedo_color = Color(0.22, 0.13, 0.05)
-	disk_mat.roughness = 0.9
 	var root := Node3D.new()
 	root.name = "GrannyDecor"
 	add_child(root)
-	var z: float = granny.z0 - 8.5
-	while z > granny.z1 + 1.0:
-		var h := rng.randf_range(1.7, 2.3)
-		var sf := Node3D.new()
-		sf.position = Vector3(-(FENCE_X + 0.45), 0, z)
-		sf.rotation.y = rng.randf_range(-0.4, 0.4) + PI * 0.5   # faces the street
-		root.add_child(sf)
-		var stem := MeshInstance3D.new()
-		var cyl := CylinderMesh.new()
-		cyl.top_radius = 0.015
-		cyl.bottom_radius = 0.025
-		cyl.height = h
-		cyl.radial_segments = 6
-		stem.mesh = cyl
-		stem.material_override = stem_mat
-		stem.position.y = h * 0.5
-		sf.add_child(stem)
-		var head := Node3D.new()
-		head.position = Vector3(0, h, 0.04)
-		head.rotation.x = -0.35
-		sf.add_child(head)
-		var disk := MeshInstance3D.new()
-		var dm := CylinderMesh.new()
-		dm.top_radius = 0.11
-		dm.bottom_radius = 0.12
-		dm.height = 0.05
-		disk.mesh = dm
-		disk.material_override = disk_mat
-		disk.rotation.x = PI * 0.5
-		head.add_child(disk)
-		for k in 14:
-			var petal := MeshInstance3D.new()
-			var pm := QuadMesh.new()
-			pm.size = Vector2(0.05, 0.12)
-			petal.mesh = pm
-			petal.material_override = petal_mat
-			var a := TAU * k / 14.0
-			petal.position = Vector3(cos(a), sin(a), 0) * 0.17 + Vector3(0, 0, 0.02)
-			petal.rotation.z = a - PI * 0.5
-			head.add_child(petal)
-		z -= rng.randf_range(1.2, 2.0)
 	# Geranium pot on the porch step (the key is under it in stage 4).
 	var porch: Vector3 = granny.house.porch
 	var pot := Node3D.new()

@@ -4,7 +4,7 @@ extends Node
 ## 1) catch five fireflies into a jar, which then lights the way;
 ## 2) a washed-out ditch with water cuts the street: find a plank by the fence,
 ##    drag it over and lay it across as a bridge;
-## 3) find granny's house: pale blue, green roof, sunflowers along the fence.
+## 3) find granny's house: brick, spruces at the wicket, a cherry over the fence.
 
 signal finished
 
@@ -56,7 +56,7 @@ func _update_objective() -> void:
 		"carry":
 			hud.set_objective("Дотащи доску до канавы и положи её (E у края воды)")
 		"granny":
-			hud.set_objective("Найди бабушкин дом: голубой, с зелёной крышей, подсолнухи у забора")
+			hud.set_objective("Найди бабушкин дом: кирпичный, ёлочки у калитки, вишня свисает через забор")
 
 
 ## Returns true when the interaction belonged to this stage.
@@ -321,6 +321,6 @@ func _physics_process(_delta: float) -> void:
 func _arrive() -> void:
 	done = true
 	hud.set_objective("")
-	await hud.say("Фиалка", "Смотри! Голубой домик, зелёная крыша, подсолнухи… Это же бабушкин дом!")
+	await hud.say("Фиалка", "Смотри! Кирпичный домик, ёлочки у калитки, вишня через забор… Это же бабушкин дом!")
 	await hud.say("Бусик", "Свет в окнах горит. Ключик под геранью — помнишь?")
 	finished.emit()

@@ -123,8 +123,11 @@ func _autoshot() -> void:
 		["burdock", vegetation.burdock_spots[1] + Vector3(-signf(vegetation.burdock_spots[1].x) * 1.6, 0.6, 0.9), vegetation.burdock_spots[1] + Vector3(0, 0.25, 0), false],
 		["dirt_road", Vector3(0.9, 0.45, -16.0), Vector3(-0.3, 0.2, -32.0), false],
 		["overview", Vector3(0.0, 25.0, 20.0), Vector3(0.0, 0.0, -80.0), false],
-		["granny_top", street.granny.gate_world + Vector3(-13.0, 26.0, 6.0), street.granny.gate_world + Vector3(-13.0, 0.0, -5.0), false],
+		["granny_top", street.gp(street.granny, 14.0, 10.0, 34.0) + Vector3(0, 0, 9.0), street.gp(street.granny, 14.0, 10.0), false],
 		["granny_street", street.granny.gate_world + Vector3(4.6, 1.3, 7.0), street.granny.gate_world + Vector3(-6.0, 1.2, -3.0), false],
+		["granny_wicket", street.gp(street.granny, 0.6, 9.9, 1.5), street.gp(street.granny, 11.0, 11.5, 1.2), false],
+		["granny_back", street.gp(street.granny, 16.0, 2.5, 2.2), street.gp(street.granny, 23.0, 15.0, 1.0), false],
+		["granny_gazebo", street.gp(street.granny, 15.5, 12.5, 2.4), street.gp(street.granny, 25.0, 3.8, 1.5), false],
 	]
 	for v in views:
 		if v[3]:
@@ -141,8 +144,10 @@ func _autoshot() -> void:
 			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_DRAW_CALLS_IN_FRAME),
 			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_OBJECTS_IN_FRAME),
 			RenderingServer.get_rendering_info(RenderingServer.RENDERING_INFO_TOTAL_PRIMITIVES_IN_FRAME)])
-	await _test_quest()
-	await _test_stage2(cam)
+	# `--shots-only` skips the gameplay tests (quick look at the scenery).
+	if not "--shots-only" in OS.get_cmdline_user_args():
+		await _test_quest()
+		await _test_stage2(cam)
 	get_tree().quit()
 
 
