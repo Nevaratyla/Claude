@@ -1,6 +1,6 @@
 class_name Hud
 extends CanvasLayer
-## Everything on screen: story cards, objective, berry counter, subtitles,
+## Everything on screen: story cards, objective, leaf counter, subtitles,
 ## interaction prompt, pause menu. Built in code to keep the project text-only.
 
 signal resumed
@@ -11,8 +11,8 @@ var fade: ColorRect
 var card: Label
 var objective_box: PanelContainer
 var objective: Label
-var berry_box: PanelContainer
-var berry_label: Label
+var counter_box: PanelContainer
+var counter_label: Label
 var subtitle_box: PanelContainer
 var subtitle: RichTextLabel
 var prompt: Label
@@ -45,23 +45,27 @@ func _ready() -> void:
 	ov.add_child(objective)
 	objective_box.modulate.a = 0.0
 
-	berry_box = _panel(root, Control.PRESET_TOP_RIGHT, Vector2(-28, 24))
+	counter_box = _panel(root, Control.PRESET_TOP_RIGHT, Vector2(-28, 24))
 	var bh := HBoxContainer.new()
 	bh.add_theme_constant_override("separation", 10)
-	berry_box.add_child(bh)
+	counter_box.add_child(bh)
 	var dot := Panel.new()
 	dot.custom_minimum_size = Vector2(22, 22)
 	var dsb := StyleBoxFlat.new()
-	dsb.bg_color = Color(0.75, 0.08, 0.14)
-	dsb.set_corner_radius_all(11)
-	dsb.border_color = Color(1, 0.6, 0.6, 0.6)
+	# Leaf-shaped badge: rounded on two opposite corners.
+	dsb.bg_color = Color(0.3, 0.55, 0.15)
+	dsb.corner_radius_top_left = 14
+	dsb.corner_radius_bottom_right = 14
+	dsb.corner_radius_top_right = 2
+	dsb.corner_radius_bottom_left = 2
+	dsb.border_color = Color(0.75, 1.0, 0.55, 0.6)
 	dsb.set_border_width_all(2)
 	dot.add_theme_stylebox_override("panel", dsb)
 	bh.add_child(dot)
-	berry_label = Label.new()
-	berry_label.text = "0"
-	bh.add_child(berry_label)
-	berry_box.modulate.a = 0.0
+	counter_label = Label.new()
+	counter_label.text = "0"
+	bh.add_child(counter_label)
+	counter_box.modulate.a = 0.0
 
 	subtitle_box = PanelContainer.new()
 	subtitle_box.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
@@ -114,7 +118,7 @@ func _ready() -> void:
 	root.add_child(card)
 
 	_build_pause(root)
-	Game.berries_changed.connect(func(n: int) -> void: berry_label.text = str(n))
+	Game.leaves_changed.connect(func(n: int) -> void: counter_label.text = str(n))
 
 
 func _theme() -> Theme:
@@ -254,8 +258,8 @@ func set_objective_text(text: String) -> void:
 	objective.text = text
 
 
-func show_berries(on: bool) -> void:
-	create_tween().tween_property(berry_box, "modulate:a", 1.0 if on else 0.0, 0.5)
+func show_counter(on: bool) -> void:
+	create_tween().tween_property(counter_box, "modulate:a", 1.0 if on else 0.0, 0.5)
 
 
 func say(speaker: String, text: String, time := 0.0) -> void:

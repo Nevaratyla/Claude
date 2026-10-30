@@ -45,9 +45,9 @@ func _ready() -> void:
 	cars.build(street)
 	_spawn_pickups()
 	_spawn_heroes()
-	print("[world] built in %d ms, batches: %d, plots: %d, trees: %d, multimeshes: %d, berries: %d" % [
+	print("[world] built in %d ms, batches: %d, plots: %d, trees: %d, multimeshes: %d, burdocks: %d" % [
 		Time.get_ticks_msec() - t0, street.draw_batches, street.plots.size(), vegetation.tree_count,
-		vegetation.multimesh_count, vegetation.berry_spots.size()])
+		vegetation.multimesh_count, vegetation.burdock_spots.size()])
 
 	director = Director.new()
 	director.hud = hud
@@ -55,7 +55,7 @@ func _ready() -> void:
 	director.friend = friend
 	director.rig = rig
 	for n in get_tree().get_nodes_in_group("interactable"):
-		if n is BerryPickup:
+		if n is BurdockPickup:
 			director.pickups.append(n)
 	add_child(director)
 	if _shot_dir != "":
@@ -66,7 +66,7 @@ func _ready() -> void:
 
 
 func _spawn_pickups() -> void:
-	for p: Vector3 in vegetation.berry_spots:
+	for p: Vector3 in vegetation.burdock_spots:
 		# Skip spots blocked by a car parked on the verge.
 		var blocked := false
 		for car in cars.verge_cars:
@@ -74,19 +74,19 @@ func _spawn_pickups() -> void:
 				blocked = true
 		if blocked:
 			continue
-		var b := BerryPickup.new()
-		b.position = p
+		var b := BurdockPickup.new()
+		b.position = Vector3(p.x, street.height_at(p.x, p.z), p.z)
 		add_child(b)
 
 
 func _spawn_heroes() -> void:
 	player = Player.new()
 	player.name = "Busik"
-	player.position = Vector3(0.5, 0.05, 0.0)
+	player.position = Vector3(0.5, street.height_at(0.5, 0.0) + 0.05, 0.0)
 	add_child(player)
 	friend = Friend.new()
 	friend.name = "Fialka"
-	friend.position = Vector3(-0.2, 0.05, 0.6)
+	friend.position = Vector3(-0.2, street.height_at(-0.2, 0.6) + 0.05, 0.6)
 	friend.leader = player
 	add_child(friend)
 	rig = CameraRig.new()
@@ -113,7 +113,8 @@ func _autoshot() -> void:
 		["gameplay", Vector3.ZERO, Vector3.ZERO, true],
 		["street_low", Vector3(0.6, 0.55, -2.0), Vector3(0.0, 0.7, -40.0), false],
 		["fence_right", Vector3(1.2, 0.9, -230.0), Vector3(4.0, 1.2, -235.0), false],
-		["berries", vegetation.berry_spots[1] + Vector3(-signf(vegetation.berry_spots[1].x) * 1.2, 0.5, 0.6), vegetation.berry_spots[1] + Vector3(0, 0.2, 0), false],
+		["burdock", vegetation.burdock_spots[1] + Vector3(-signf(vegetation.burdock_spots[1].x) * 1.6, 0.6, 0.9), vegetation.burdock_spots[1] + Vector3(0, 0.25, 0), false],
+		["dirt_road", Vector3(0.9, 0.45, -16.0), Vector3(-0.3, 0.2, -32.0), false],
 		["overview", Vector3(0.0, 25.0, 20.0), Vector3(0.0, 0.0, -80.0), false],
 	]
 	for v in views:
@@ -135,13 +136,13 @@ func _autoshot() -> void:
 	get_tree().quit()
 
 
-## Walks the berry quest: teleports to pickups, picks them, then steps forward
+## Walks the leaf quest: teleports to pickups, picks them, then steps forward
 ## and checks that the next event fires. Prints PASS/FAIL lines.
 func _test_quest() -> void:
 	print("[test] quality=%s pickups=%d" % [Game.QUALITY_NAMES[Game.quality], director.pickups.size()])
 	var picked := 0
 	for b in director.pickups:
-		if picked >= Director.BERRIES_NEEDED:
+		if picked >= Director.LEAVES_NEEDED:
 			break
 		player.global_position = b.global_position + Vector3(0.3 * -signf(b.global_position.x), 0.05, 0)
 		for i in 3:
@@ -151,12 +152,12 @@ func _test_quest() -> void:
 			picked += 1
 		else:
 			print("[test] FAIL: pickup at %s not in reach" % b.global_position)
-	print("[test] berries=%d %s" % [Game.berries, "PASS" if Game.berries >= Director.BERRIES_NEEDED else "FAIL"])
+	print("[test] leaves=%d %s" % [Game.leaves, "PASS" if Game.leaves >= Director.LEAVES_NEEDED else "FAIL"])
 	await get_tree().create_timer(4.0).timeout
 	var last_z := player.global_position.z
-	print("[test] goal %.1f m ahead of last berry %s" % [last_z - director._goal_z,
+	print("[test] goal %.1f m ahead of last leaf %s" % [last_z - director._goal_z,
 		"PASS" if last_z - director._goal_z <= 12.0 else "FAIL"])
-	player.global_position = Vector3(0.0, 0.05, director._goal_z - 0.5)
+	player.global_position = Vector3(0.0, street.height_at(0.0, director._goal_z - 0.5) + 0.05, director._goal_z - 0.5)
 	# process_frame fires before nodes' _process, so give the Director a few frames.
 	for i in 4:
 		await get_tree().process_frame
@@ -166,4 +167,4 @@ func _test_quest() -> void:
 	for b in director.pickups:
 		if is_instance_valid(b):
 			furthest = minf(furthest, b.global_position.z)
-	print("[test] berry area length %.0f m" % -furthest)
+	print("[test] burdock area length %.0f m" % -furthest)

@@ -16,6 +16,7 @@ uniform vec3 fruit_color : source_color = vec3(0.75, 0.08, 0.05);
 uniform float flex = 0.25;
 uniform float translucency = 0.6;
 uniform float alpha_cut = 0.45;
+uniform bool random_flip = true;    // off for single-leaf tiles that have a base
 
 varying float v_seed;
 varying flat int v_flip;
@@ -33,8 +34,10 @@ void vertex() {
 void fragment() {
 	vec2 uv = UV;
 	// Flip/rotate per card so repeated cards do not look identical.
-	if ((v_flip & 1) == 1) uv.x = 1.0 - uv.x;
-	if ((v_flip & 2) == 2) uv = uv.yx;
+	if (random_flip) {
+		if ((v_flip & 1) == 1) uv.x = 1.0 - uv.x;
+		if ((v_flip & 2) == 2) uv = uv.yx;
+	}
 	vec2 cell = vec2(float(tile % 4), float(tile / 4));
 	vec2 auv = (cell + 0.04 + uv * 0.92) / vec2(4.0, 2.0);
 	vec4 t = texture(g_leaf_atlas, auv);

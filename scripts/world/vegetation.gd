@@ -12,6 +12,7 @@ const ATLAS := preload("res://shaders/leaf_atlas.gdshader")
 const CHUNK := 100.0
 const GRASS_CHUNK := 25.0
 const LOD_DIST := 140.0
+const COVER_CHUNK := 50.0
 
 # Species: crown "ell" ellipsoid, "cone", "col" column. tile: leaf atlas tile.
 const SPECIES := {
@@ -29,8 +30,6 @@ const SPECIES := {
 		"tile": 2, "leaf": Color(0.1, 0.2, 0.12), "autumn": 0.0, "bark": 9, "branches": 0, "flex": 0.15},
 	"lilac": {"h": 2.4, "trunk_r": 0.04, "crown": "ell", "cr": 1.3, "cbase": 0.12, "cards": 200, "card": 0.7,
 		"tile": 0, "leaf": Color(0.2, 0.33, 0.12), "autumn": 0.05, "bark": 9, "branches": 5, "flex": 0.3},
-	"raspberry": {"h": 1.3, "trunk_r": 0.012, "crown": "ell", "cr": 0.8, "cbase": 0.2, "cards": 110, "card": 0.55,
-		"tile": 5, "leaf": Color(0.24, 0.36, 0.13), "autumn": 0.05, "bark": 9, "branches": 6, "flex": 0.5},
 }
 
 var rng := RandomNumberGenerator.new()
@@ -40,7 +39,7 @@ var _bark_mats := {}
 var _leaf_mats := {}
 var multimesh_count := 0
 var tree_count := 0
-var berry_spots: Array[Vector3] = []
+var burdock_spots: Array[Vector3] = []
 var _grass_mmis: Array[MultiMeshInstance3D] = []
 var _grass_mats: Array[ShaderMaterial] = []
 var _near_leaves: Array[MultiMeshInstance3D] = []
@@ -85,6 +84,7 @@ func build(street: Street) -> void:
 	_place(street)
 	_commit_trees()
 	_grass(street)
+	_ground_cover(street)
 	Game.quality_changed.connect(_apply_quality)
 	_apply_quality(Game.quality)
 
@@ -203,13 +203,13 @@ func _make_species(sp: String, d: Dictionary) -> Dictionary:
 		pts.append(Vector3(rng.randf_range(-0.15, 0.15) * h * 0.04, y, rng.randf_range(-0.15, 0.15) * h * 0.04))
 	var r0: float = d.trunk_r
 	for i in 3:
-		_cyl(trunk, pts[i], pts[i + 1], r0 * (1.0 - i * 0.28), r0 * (1.0 - (i + 1) * 0.28), 7 if sp != "raspberry" else 4)
+		_cyl(trunk, pts[i], pts[i + 1], r0 * (1.0 - i * 0.28), r0 * (1.0 - (i + 1) * 0.28), 7)
 	# Main branches from the crown base out toward the crown surface.
 	for i in int(d.branches):
-		var start := pts[1].lerp(pts[2], rng.randf()) if sp != "raspberry" else Vector3(rng.randf_range(-0.2, 0.2), 0, rng.randf_range(-0.2, 0.2))
+		var start := pts[1].lerp(pts[2], rng.randf())
 		var end := _crown_point(d, h)
 		end = crown_c + (end - crown_c) * 0.8
-		_cyl(trunk, start, end, r0 * 0.35, r0 * 0.08, 5 if sp != "raspberry" else 3)
+		_cyl(trunk, start, end, r0 * 0.35, r0 * 0.08, 5)
 	trunk.generate_tangents()
 	var trunk_mesh := trunk.commit()
 
@@ -284,7 +284,7 @@ func _place(street: Street) -> void:
 		# Bushes inside the fence.
 		for i in rng.randi_range(0, 3):
 			var pos := Vector3(s * (fx + rng.randf_range(0.8, 2.5)), 0, lerpf(z0, z1, rng.randf()))
-			_add("lilac" if rng.randf() < 0.6 else "raspberry", pos, rng.randf_range(0.8, 1.3))
+			_add("lilac", pos, rng.randf_range(0.8, 1.3))
 		# Garden trees.
 		var trees := rng.randi_range(1, 5)
 		for i in trees:
@@ -292,19 +292,13 @@ func _place(street: Street) -> void:
 			var sp: String = ["apple", "apple", "rowan", "birch", "maple", "spruce"][rng.randi_range(0, 5)]
 			if free.call(pos, 2.0):
 				_add(sp, pos, rng.randf_range(0.8, 1.2))
-		# Raspberry patches near the fence (berries for the quest).
-		if rng.randf() < 0.2:
-			for i in rng.randi_range(3, 6):
-				_add("raspberry", Vector3(s * (fx + rng.randf_range(0.5, 1.6)), 0, lerpf(z0, z1, rng.randf_range(0.6, 0.95)) - i * 0.6), rng.randf_range(0.9, 1.2))
-	# Raspberry canes growing through the fences onto the verge; the berries
-	# hanging on them are the stage-1 collectibles (see Director).
-	# Tight cluster near the start so the berry quest takes a couple of minutes.
-	var bz := -8.0
+	# Burdocks on the verge are the stage-1 collectibles (see Director): a dense
+	# run near the start, more than needed, so missing a few is no problem.
+	var bz := -6.0
 	while bz > -125.0:
 		var bside := -1 if rng.randf() < 0.5 else 1
-		_add("raspberry", Vector3(bside * (fx - 0.35), 0, bz), rng.randf_range(0.65, 0.85))
-		berry_spots.append(Vector3(bside * (fx - 0.55), 0, bz + rng.randf_range(-0.3, 0.3)))
-		bz -= rng.randf_range(6.0, 10.0)
+		burdock_spots.append(Vector3(bside * rng.randf_range(fx - 0.75, fx - 0.4), 0, bz))
+		bz -= rng.randf_range(4.0, 6.5)
 	# Copse behind the entrance gate, where the heroes come from.
 	for i in 90:
 		var x := rng.randf_range(-45.0, 45.0)
@@ -327,10 +321,12 @@ func _commit_trees() -> void:
 		var sp := key.split("|")[0]
 		var xforms: Array = _instances[key]
 		var m: Dictionary = _meshes[sp]
-		for part: String in ["trunk", "leaves", "leaves_far"]:
+		# leaves_shadow: the sparse far crown, used only to cast the shadow of
+		# nearby trees (4x fewer cards in the shadow pass, same look).
+		for part: String in ["trunk", "leaves", "leaves_far", "leaves_shadow"]:
 			var mm := MultiMesh.new()
 			mm.transform_format = MultiMesh.TRANSFORM_3D
-			mm.mesh = m[part]
+			mm.mesh = m["leaves_far" if part == "leaves_shadow" else part]
 			mm.instance_count = xforms.size()
 			for i in xforms.size():
 				mm.set_instance_transform(i, xforms[i])
@@ -338,8 +334,10 @@ func _commit_trees() -> void:
 			mmi.name = "%s_%s" % [key.replace("|", "_"), part]
 			mmi.multimesh = mm
 			mmi.material_override = m.bark if part == "trunk" else _leaf_mats[sp]
-			if part == "leaves":
+			if part == "leaves" or part == "leaves_shadow":
 				_near_leaves.append(mmi)
+				mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF if part == "leaves" \
+					else GeometryInstance3D.SHADOW_CASTING_SETTING_SHADOWS_ONLY
 				mmi.visibility_range_end = LOD_DIST
 				mmi.visibility_range_end_margin = 20.0
 				mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
@@ -425,8 +423,10 @@ func _grass(street: Street) -> void:
 		var short: Array = []
 		var tall_x: Array = []
 		var flowers: Array = []
-		for zone: Array in [[-1, 2.75, Street.FENCE_X - 0.05, 30.0], [1, 2.75, Street.FENCE_X - 0.05, 30.0],
-				[-1, Street.FENCE_X + 0.1, Street.FENCE_X + 7.0, 6.0], [1, Street.FENCE_X + 0.1, Street.FENCE_X + 7.0, 6.0]]:
+		# [side, x from, x to, clumps per m², only on dirt road]
+		for zone: Array in [[-1, 2.75, Street.FENCE_X - 0.05, 30.0, false], [1, 2.75, Street.FENCE_X - 0.05, 30.0, false],
+				[-1, Street.FENCE_X + 0.1, Street.FENCE_X + 7.0, 6.0, false], [1, Street.FENCE_X + 0.1, Street.FENCE_X + 7.0, 6.0, false],
+				[1, -0.32, 0.32, 22.0, true], [-1, 1.75, 2.6, 7.0, true], [1, 1.75, 2.6, 7.0, true]]:
 			var side: int = zone[0]
 			var x0: float = zone[1]
 			var x1: float = zone[2]
@@ -434,19 +434,32 @@ func _grass(street: Street) -> void:
 			for i in count:
 				var x := side * rng.randf_range(x0, x1)
 				var zz := z - rng.randf() * GRASS_CHUNK
+				if zone[4] and street.road.dirt_at(zz) < 0.6:
+					continue
+				# Keep the collectible burdocks in the open, not buried in grass.
+				if zz > -135.0 and _near_spot(x, zz, 0.7):
+					continue
 				var near_fence := absf(x) > Street.FENCE_X - 0.5
-				var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.7, 1.3)), Vector3(x, 0, zz))
+				var gy := street.height_at(x, zz) - 0.01
+				var xf := Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.7, 1.3)), Vector3(x, gy, zz))
 				var col: Color = palette[rng.randi_range(0, palette.size() - 1)]
 				if near_fence and rng.randf() < 0.35:
 					tall_x.append([xf, col])
 				else:
 					short.append([xf, col])
 				if rng.randf() < 0.04:
-					flowers.append([Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.7, 1.5)), Vector3(x, 0, zz)),
+					flowers.append([Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.7, 1.5)), Vector3(x, gy, zz)),
 						flower_cols[rng.randi_range(0, flower_cols.size() - 1)]])
 		for set: Array in [[clump, short, "grass", mat], [tall, tall_x, "weeds", mat], [flower, flowers, "flowers", fmat]]:
 			_grass_chunk(set[0], set[1], set[3], "%s_%d" % [set[2], int(-z)])
 		z -= GRASS_CHUNK
+
+
+func _near_spot(x: float, z: float, r: float) -> bool:
+	for sp in burdock_spots:
+		if absf(sp.z - z) < r and absf(sp.x - x) < r:
+			return true
+	return false
 
 
 func _grass_chunk(mesh: Mesh, items: Array, mat: Material, nm: String) -> void:
@@ -470,3 +483,113 @@ func _grass_chunk(mesh: Mesh, items: Array, mat: Material, nm: String) -> void:
 	add_child(mmi)
 	_grass_mmis.append(mmi)
 	multimesh_count += 1
+
+
+# ------------------------------------------------------------- ground cover
+
+## Burdocks along the fences, plantain on the dirt road, stones and pebbles.
+func _ground_cover(street: Street) -> void:
+	var burdocks: Array[ArrayMesh] = []
+	for i in 4:
+		burdocks.append(Burdock.make_mesh(rng, rng.randi_range(7, 10), rng.randf_range(0.42, 0.6),
+			Color(0.2, 0.32, 0.1), i >= 2))
+	var plantain := Burdock.make_mesh(rng, 6, 0.13, Color(0.16, 0.26, 0.08), false, true)
+	var stones: Array[ArrayMesh] = []
+	for i in 3:
+		stones.append(_stone_mesh())
+	var stone_mat := StandardMaterial3D.new()
+	stone_mat.vertex_color_use_as_albedo = true
+	stone_mat.roughness = 0.88
+
+	var fx := Street.FENCE_X
+	var z := Street.START_Z + 4.0
+	while z > -Street.LENGTH:
+		var z1 := z - COVER_CHUNK
+		var burd: Array = [[], [], [], []]
+		var plant: Array = []
+		var stone: Array = [[], [], []]
+		# Burdocks: on the verge past the quest area, inside the yards near the fence everywhere.
+		var bz := z
+		while bz > z1:
+			var side := -1 if rng.randf() < 0.5 else 1
+			var inside := bz > -130.0 or rng.randf() < 0.4
+			var x := side * (fx + rng.randf_range(0.3, 1.2) if inside else fx - rng.randf_range(0.35, 0.8))
+			var y := street.height_at(x, bz) - 0.02
+			burd[rng.randi_range(0, 3)].append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.8, 1.25)), Vector3(x, y, bz)))
+			bz -= rng.randf_range(3.0, 9.0)
+		# Plantain and stones on the road; stones also on the gravel shoulder.
+		for i in int(COVER_CHUNK * 9.0):
+			var zz := z - rng.randf() * COVER_CHUNK
+			var d := street.road.dirt_at(zz)
+			var x := rng.randf_range(-2.9, 2.9)
+			var ax := absf(x)
+			var hw := street.road.half_width_at(zz)
+			var on_road := ax < hw
+			var y := street.height_at(x, zz)
+			if on_road and d > 0.5 and (ax < 0.35 or ax > hw - 0.5) and rng.randf() < 0.35:
+				plant.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * rng.randf_range(0.7, 1.4)), Vector3(x, y - 0.005, zz)))
+			elif (on_road and d > 0.4) or (not on_road and ax < 3.1):
+				var size := rng.randf_range(0.015, 0.045) if rng.randf() < 0.85 else rng.randf_range(0.06, 0.12)
+				var b := Basis.from_euler(Vector3(rng.randf() * TAU, rng.randf() * TAU, rng.randf() * TAU)).scaled(
+					Vector3(size, size * rng.randf_range(0.5, 0.8), size * rng.randf_range(0.7, 1.1)))
+				var g := rng.randf_range(0.38, 0.62)
+				stone[rng.randi_range(0, 2)].append([Transform3D(b, Vector3(x, y - size * 0.25, zz)),
+					Color(g, g * 0.97, g * 0.92)])
+		for i in 4:
+			_cover_mm(burdocks[i], burd[i], null, "burdock%d_%d" % [i, int(-z)], 90.0, true)
+		_cover_mm(plantain, plant, null, "plantain_%d" % int(-z), 35.0, false)
+		for i in 3:
+			_cover_mm(stones[i], stone[i], stone_mat, "stones%d_%d" % [i, int(-z)], 32.0, false)
+		z = z1
+
+
+func _cover_mm(mesh: Mesh, items: Array, mat: Material, nm: String, vis_end: float, shadow: bool) -> void:
+	if items.is_empty():
+		return
+	var colored: bool = items[0] is Array
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.use_colors = colored
+	mm.mesh = mesh
+	mm.instance_count = items.size()
+	for i in items.size():
+		if colored:
+			mm.set_instance_transform(i, items[i][0])
+			mm.set_instance_color(i, items[i][1])
+		else:
+			mm.set_instance_transform(i, items[i])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.name = nm
+	mmi.multimesh = mm
+	if mat:
+		mmi.material_override = mat
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_ON if shadow else GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	mmi.visibility_range_end = vis_end
+	mmi.visibility_range_end_margin = vis_end * 0.1
+	mmi.visibility_range_fade_mode = GeometryInstance3D.VISIBILITY_RANGE_FADE_SELF
+	add_child(mmi)
+	multimesh_count += 1
+
+
+## Unit-size lumpy pebble: a low-poly sphere with jittered vertices.
+func _stone_mesh() -> ArrayMesh:
+	var sm := SphereMesh.new()
+	sm.radius = 0.5
+	sm.height = 1.0
+	sm.radial_segments = 8
+	sm.rings = 5
+	var arr := sm.get_mesh_arrays()
+	var verts: PackedVector3Array = arr[Mesh.ARRAY_VERTEX]
+	var seed_off := rng.randf() * 100.0
+	for i in verts.size():
+		var v := verts[i]
+		# Same jitter for duplicated seam vertices: derive it from the position.
+		var k := 0.82 + 0.3 * (sin(v.x * 7.1 + seed_off) * sin(v.y * 5.3 + seed_off * 0.7) * sin(v.z * 6.7) * 0.5 + 0.5)
+		verts[i] = v * k
+	arr[Mesh.ARRAY_VERTEX] = verts
+	arr[Mesh.ARRAY_NORMAL] = null
+	arr[Mesh.ARRAY_TANGENT] = null
+	var st := SurfaceTool.new()
+	st.create_from_arrays(arr)
+	st.generate_normals()
+	return st.commit()

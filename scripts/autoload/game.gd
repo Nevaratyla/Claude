@@ -1,7 +1,7 @@
 extends Node
 ## Global state: input map, shared noise texture, graphics quality, story progress.
 
-signal berries_changed(count: int)
+signal leaves_changed(count: int)
 signal quality_changed(level: int)
 
 enum Quality { LOW, MEDIUM, HIGH, ULTRA }
@@ -10,7 +10,7 @@ const QUALITY_NAMES := ["Низко", "Средне", "Высоко", "Ульт�
 const SETTINGS_PATH := "user://settings.cfg"
 
 var quality: int = Quality.HIGH
-var berries: int = 0
+var leaves: int = 0
 var flags := {}
 
 var noise_texture: ImageTexture
@@ -23,9 +23,9 @@ func _enter_tree() -> void:
 	quality = _load_quality()
 
 
-func add_berries(n: int) -> void:
-	berries += n
-	berries_changed.emit(berries)
+func add_leaves(n: int) -> void:
+	leaves += n
+	leaves_changed.emit(leaves)
 
 
 ## First launch: integrated GPUs (Intel/AMD APU in laptops) start on LOW,

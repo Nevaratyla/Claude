@@ -1,20 +1,20 @@
 class_name Director
 extends Node
-## Story flow. Stage 1: arrival in the closed dacha village, raspberries for
-## granny, a few more steps down the street until a car is heard (stage 2 hook).
+## Story flow. Stage 1: arrival in the closed dacha village, burdock leaves for
+## granny's sore knee, a few more steps until a car is heard (stage 2 hook).
 
-const BERRIES_NEEDED := 10
-## After the last berry the next event is only this far ahead (a few seconds).
+const LEAVES_NEEDED := 10
+## After the last leaf the next event is only this far ahead (a few seconds).
 const NEXT_EVENT_DIST := 10.0
 
 var hud: Hud
 var player: Player
 var friend: Friend
 var rig: CameraRig
-var pickups: Array[BerryPickup] = []
+var pickups: Array[BurdockPickup] = []
 
-var _berry_quest := false
-var _berry_done := false
+var _leaf_quest := false
+var _leaf_done := false
 var _said := {}
 var _ended := false
 var _goal_z := INF
@@ -22,7 +22,7 @@ var _goal_z := INF
 
 func start(skip_intro := false) -> void:
 	player.interacted.connect(_on_interact)
-	Game.berries_changed.connect(_on_berries)
+	Game.leaves_changed.connect(_on_leaves)
 	if skip_intro:
 		hud.fade.color.a = 0.0
 		return
@@ -47,11 +47,11 @@ func _process(_delta: float) -> void:
 		return
 	_update_prompt()
 	var z := player.global_position.z
-	# Start the berry quest when the first raspberries come into view.
-	if not _berry_quest and not pickups.is_empty():
+	# Start the leaf quest when the first burdock comes into view.
+	if not _leaf_quest and not pickups.is_empty():
 		var first := pickups[0]
 		if is_instance_valid(first) and player.global_position.distance_to(first.global_position) < 6.0:
-			_start_berry_quest()
+			_start_leaf_quest()
 	_line_at(z < -30.0, "rowan", "Фиалка", "Смотри, рябина какая рыжая… Осень скоро.")
 	_line_at(z < -60.0, "quiet", "Бусик", "Тихо как… Даже собаки не лают.")
 	_line_at(z < -95.0, "fences", "Фиалка", "Заборы тут какие высоченные. Мы как муравьи.")
@@ -70,51 +70,51 @@ func _line_at(cond: bool, id: String, who: String, text: String) -> void:
 		hud.say(who, text)
 
 
-func _start_berry_quest() -> void:
-	_berry_quest = true
-	hud.show_berries(true)
-	await hud.say("Фиалка", "Ой, малина! Бабушка обожает пироги с малиной. Давай наберём ей гостинец?")
-	if not _berry_done:
-		_update_berry_objective()
+func _start_leaf_quest() -> void:
+	_leaf_quest = true
+	hud.show_counter(true)
+	await hud.say("Фиалка", "Ой, лопухи! Бабушка всегда прикладывает лопух к больной коленке. Нарвём ей листьев?")
+	if not _leaf_done:
+		_update_leaf_objective()
 
 
-func _update_berry_objective() -> void:
-	hud.set_objective("Собери малину для бабушки: %d / %d" % [mini(Game.berries, BERRIES_NEEDED), BERRIES_NEEDED])
+func _update_leaf_objective() -> void:
+	hud.set_objective("Нарви листьев лопуха для бабушки: %d / %d" % [mini(Game.leaves, LEAVES_NEEDED), LEAVES_NEEDED])
 
 
 func _update_prompt() -> void:
-	if player.focus is BerryPickup:
-		hud.set_prompt("[E]  Сорвать малину")
+	if player.focus is BurdockPickup:
+		hud.set_prompt("[E]  Сорвать лист лопуха")
 	else:
 		hud.set_prompt("")
 
 
 func _on_interact(target: Node) -> void:
-	if target is BerryPickup:
-		(target as BerryPickup).pick()
+	if target is BurdockPickup:
+		(target as BurdockPickup).pick()
 		player.creature.happy = 1.0
 		get_tree().create_timer(1.2).timeout.connect(func() -> void: player.creature.happy = 0.0)
-		Game.add_berries(1)
+		Game.add_leaves(1)
 
 
-func _on_berries(n: int) -> void:
-	if not _berry_quest:
-		_start_berry_quest()
-	if _berry_done:
+func _on_leaves(n: int) -> void:
+	if not _leaf_quest:
+		_start_leaf_quest()
+	if _leaf_done:
 		return
-	_update_berry_objective()
+	_update_leaf_objective()
 	match n:
 		1:
-			hud.say("Бусик", "Спелая! Чур, одну я съем.")
+			hud.say("Бусик", "Ого, лист больше меня! Как зонтик.")
 		4:
-			hud.say("Фиалка", "Не ешь всё сам! Это для бабушки.")
+			hud.say("Фиалка", "Самые большие выбирай, бабушке нужны большие.")
 		7:
 			hud.say("Фиалка", "Слышишь? Будто мотор вдалеке… А, показалось.")
-	if n >= BERRIES_NEEDED:
-		_berry_done = true
+	if n >= LEAVES_NEEDED:
+		_leaf_done = true
 		_goal_z = player.global_position.z - NEXT_EVENT_DIST
 		hud.set_objective("Иди дальше по улице — ещё %d м" % int(NEXT_EVENT_DIST))
-		await hud.say("Фиалка", "Целая горсть! Бабушка испечёт пирог. Пошли дальше!")
+		await hud.say("Фиалка", "Целая охапка! Бабушкина коленка скажет спасибо. Пошли дальше!")
 
 
 func _stage_end() -> void:

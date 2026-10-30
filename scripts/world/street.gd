@@ -26,6 +26,8 @@ var rng := RandomNumberGenerator.new()
 var mk := MeshKit.new()
 var plots: Array[Dictionary] = []
 var pole_positions: Array[Vector3] = []
+var road: Road
+var _occluders: Array = []            # [Transform3D, Vector3 size]
 var draw_batches := 0
 
 
@@ -44,6 +46,7 @@ func build() -> void:
 	_entrance()
 	draw_batches = mk.build(self)
 	_collision()
+	_build_occluders()
 
 
 # ---------------------------------------------------------------- materials
@@ -70,16 +73,18 @@ func _make_materials() -> void:
 	mk.add_material("roof_tile", _surf(5, Color(1, 1, 1), 0.38, 0.4, 0.1))
 	mk.add_material("siding", _surf(6, Color(1, 1, 1), 0.55, 0.0, 0.4))
 	mk.add_material("slate", _surf(7, Color(0.62, 0.62, 0.6), 0.9, 0.0, 0.2))
-	mk.add_material("paint", _surf(0, Color(1, 1, 1), 0.5, 0.0, 0.3))
-	mk.add_material("metal", _surf(0, Color(1, 1, 1), 0.45, 0.75, 0.3))
+	# Small parts (frames, posts, mailboxes, wires) are sub-pixel and fogged
+	# far away, so their batches stop drawing beyond a few hundred metres.
+	mk.add_material("paint", _surf(0, Color(1, 1, 1), 0.5, 0.0, 0.3), true, 260.0)
+	mk.add_material("metal", _surf(0, Color(1, 1, 1), 0.45, 0.75, 0.3), true, 320.0)
 	var cl := ShaderMaterial.new()
 	cl.shader = CHAINLINK
 	mk.add_material("chainlink", cl, true, 160.0)
 	var w := ShaderMaterial.new()
 	w.shader = WINDOW
-	mk.add_material("glass", w, false)
+	mk.add_material("glass", w, false, 300.0)
 	var wire := _surf(0, Color(0.08, 0.08, 0.08), 0.6, 0.2, 0.0)
-	mk.add_material("wire", wire, false)
+	mk.add_material("wire", wire, false, 220.0)
 	var poly := StandardMaterial3D.new()
 	poly.albedo_color = Color(0.9, 0.95, 0.95, 0.35)
 	poly.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
@@ -116,18 +121,33 @@ func _jit(c: Color, amount := 0.06) -> Color:
 # -------------------------------------------------------------------- ground
 
 func _ground() -> void:
-	var z := START_Z + 30.0
-	while z > -LENGTH - 60.0:
-		var z1 := z - MeshKit.CHUNK_LEN
-		mk.quad("ground", Vector3(-60, 0, z), Vector3(60, 0, z), Vector3(60, 0, z1), Vector3(-60, 0, z1))
+	var top := START_Z + 30.0
+	var bottom := -LENGTH - 60.0
+	# Between the fences: the heightfield road. Outside: flat yards and fields
+	# (zero vertex colour = not road for the ground shader).
+	road = Road.new()
+	road.name = "Road"
+	add_child(road)
+	road.build(top, bottom, mk.materials["ground"])
+	var none := Color(0, 0, 0, 0)
+	var z := top
+	while z > bottom:
+		var z1 := maxf(z - MeshKit.CHUNK_LEN, bottom)
+		for x: Array in [[-60.0, -Road.HALF], [Road.HALF, 60.0]]:
+			mk.quad("ground", Vector3(x[0], 0, z), Vector3(x[1], 0, z), Vector3(x[1], 0, z1), Vector3(x[0], 0, z1), none)
 		z = z1
 	# Far fields out to the horizon (hidden by the tree belts and fog).
 	var zf0 := START_Z + 1500.0
 	var zf1 := -LENGTH - 1500.0
 	for x: Array in [[-1500.0, -60.0], [60.0, 1500.0]]:
-		mk.quad("ground", Vector3(x[0], 0, zf0), Vector3(x[1], 0, zf0), Vector3(x[1], 0, zf1), Vector3(x[0], 0, zf1))
-	for zz: Array in [[zf0, START_Z + 30.0], [z, zf1]]:
-		mk.quad("ground", Vector3(-60, 0, zz[0]), Vector3(60, 0, zz[0]), Vector3(60, 0, zz[1]), Vector3(-60, 0, zz[1]))
+		mk.quad("ground", Vector3(x[0], 0, zf0), Vector3(x[1], 0, zf0), Vector3(x[1], 0, zf1), Vector3(x[0], 0, zf1), none)
+	for zz: Array in [[zf0, top], [bottom, zf1]]:
+		mk.quad("ground", Vector3(-60, 0, zz[0]), Vector3(60, 0, zz[0]), Vector3(60, 0, zz[1]), Vector3(-60, 0, zz[1]), none)
+
+
+## Ground height anywhere on the street (0 in the yards).
+func height_at(x: float, z: float) -> float:
+	return road.height_at(x, z) if absf(x) < Road.HALF else 0.0
 
 
 # --------------------------------------------------------------------- plots
@@ -202,6 +222,9 @@ func _fence_run(style: String, a: Vector3, b: Vector3, d0: float, d1: float, p: 
 		return a + dir * d + Vector3(0, y, 0) + bs.z * z
 	var seg_len := d1 - d0
 
+	if style in ["prof", "brick", "euro"] and seg_len > 0.5:
+		_occlude(Transform3D(bs, at.call((d0 + d1) * 0.5, (h - 0.15) * 0.5 + 0.05, 0.0)),
+			Vector3(seg_len, h - 0.15, 0.02))
 	match style:
 		"picket", "old":
 			var old := style == "old"
@@ -325,6 +348,8 @@ func _gate(p: Dictionary, a: Vector3, b: Vector3, start: float, length: float) -
 				d += 0.135
 			mk.box("wood", Transform3D(Basis(bs.z, atan2(h, length * 0.5)) * bs, lc + bs.z * 0.03),
 				Vector3(sqrt(h * h + length * length * 0.25) - 0.1, 0.08, 0.03), cols.wood.darkened(0.1))
+	if metal and p.fence != "rabitsa":
+		_occlude(Transform3D(bs, at.call(start + length * 0.5, h * 0.5 + 0.06, 0.0)), Vector3(length - 0.1, h - 0.15, 0.02))
 	# Wicket with handle.
 	var wc: Vector3 = at.call(start + length + 0.55, h * 0.5 + 0.05, 0.0)
 	if metal:
@@ -381,6 +406,7 @@ func _house(p: Dictionary) -> void:
 	# Foundation and walls.
 	mk.box("concrete", base.translated_local(Vector3(0, 0.2, 0)), Vector3(w + 0.12, 0.4, d + 0.12), Color(0.66, 0.65, 0.62))
 	mk.box(wall_mat, base.translated_local(Vector3(0, 0.4 + wall_h * 0.5, 0)), Vector3(w, wall_h, d), wall_col)
+	_occlude(base.translated_local(Vector3(0, 0.4 + wall_h * 0.5, 0)), Vector3(w - 0.1, wall_h, d - 0.1))
 	var top := 0.4 + wall_h
 	if t == "brick2":
 		# Floor band between storeys.
@@ -573,8 +599,8 @@ func _poles_and_wires() -> void:
 		var p: Vector3 = poles[i]
 		var tilt := Basis(Vector3(0, 0, 1), deg_to_rad(rng.randf_range(-1.5, 1.5)))
 		var xf := Transform3D(tilt, p)
-		# Concrete pole: tapered square section.
-		mk.cylinder("concrete", xf, 0.14, 0.09, 9.0, 4, Color(0.72, 0.71, 0.68))
+		# Concrete pole: tapered square section, footing sunk into the uneven verge.
+		mk.cylinder("concrete", xf.translated(Vector3(0, -0.2, 0)), 0.14, 0.09, 9.2, 4, Color(0.72, 0.71, 0.68))
 		# Crossarm and insulators.
 		mk.box("metal", Transform3D(tilt, p + tilt * Vector3(0.25, 8.45, 0)), Vector3(1.0, 0.06, 0.06), Color(0.3, 0.3, 0.3))
 		for k in 4:
@@ -645,6 +671,27 @@ func _entrance() -> void:
 	add_child(l1)
 
 
+# ---------------------------------------------------------------- occlusion
+
+## Solid fences and houses hide whatever is behind them; with occlusion
+## culling on, the GPU skips those yards entirely. Only gap-free fences count.
+func _occlude(xf: Transform3D, size: Vector3) -> void:
+	_occluders.append([xf, size])
+
+
+func _build_occluders() -> void:
+	var root := Node3D.new()
+	root.name = "Occluders"
+	add_child(root)
+	for o: Array in _occluders:
+		var oi := OccluderInstance3D.new()
+		var box := BoxOccluder3D.new()
+		box.size = o[1]
+		oi.occluder = box
+		oi.transform = o[0]
+		root.add_child(oi)
+
+
 # ----------------------------------------------------------------- collision
 
 func _collision() -> void:
@@ -652,7 +699,7 @@ func _collision() -> void:
 	body.name = "StreetCollision"
 	add_child(body)
 	var shapes := [
-		[Vector3(0, -0.5, -LENGTH * 0.5), Vector3(40, 1, LENGTH + 80)],
+		[Vector3(0, -0.8, -LENGTH * 0.5), Vector3(40, 1, LENGTH + 80)],
 		[Vector3(FENCE_X + 0.15, 2, -LENGTH * 0.5), Vector3(0.3, 4, LENGTH + 80)],
 		[Vector3(-FENCE_X - 0.15, 2, -LENGTH * 0.5), Vector3(0.3, 4, LENGTH + 80)],
 		[Vector3(0, 2, START_Z + 4.0), Vector3(10, 4, 0.5)],

@@ -23,7 +23,8 @@ func build(street: Street) -> void:
 	var verge_z := [-45.0, -128.0, -205.0, -262.0, -310.0]
 	for z: float in verge_z:
 		var side := -1 if rng.randf() < 0.5 else 1
-		var car := _spawn(_pick_model(), Vector3(side * (Street.FENCE_X - 1.0), 0, z), PI * 0.5 if rng.randf() < 0.5 else -PI * 0.5)
+		var cx := side * (Street.FENCE_X - 1.0)
+		var car := _spawn(_pick_model(), Vector3(cx, street.height_at(cx, z), z), PI * 0.5 if rng.randf() < 0.5 else -PI * 0.5)
 		_add_collision(car)
 		verge_cars.append(car)
 	for p in street.plots:

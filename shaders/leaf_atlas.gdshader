@@ -1,6 +1,6 @@
 // Bakes the foliage atlas once at startup (see LeafAtlas). 4x2 tiles:
 // 0 broad leaves, 1 small (birch), 2 needles, 3 compound (rowan), 4 scale (thuja),
-// 5 raspberry leaves, 6 flower petals, 7 reserved.
+// 5 raspberry leaves, 6 flower petals, 7 one big burdock leaf (base at the bottom).
 // Output: R tone variation, G fruit mask, B unused, A coverage.
 shader_type canvas_item;
 render_mode blend_disabled;
@@ -27,7 +27,20 @@ void fragment() {
 	float inside = -1.0;
 	float tone = 0.0;
 	float fruit = 0.0;
-	if (tuv.x > 0.0 && tuv.x < 1.0 && tuv.y > 0.0 && tuv.y < 1.0) {
+	if (tile == 7 && tuv.x > 0.0 && tuv.x < 1.0 && tuv.y > 0.0 && tuv.y < 1.0) {
+		// Broad cordate burdock leaf with a wavy margin and pale veins.
+		vec2 q = vec2(tuv.x - 0.5, 1.0 - tuv.y);           // y: 0 base .. 1 tip
+		vec2 e = vec2(q.x / 0.47, (q.y - 0.47) / 0.5);
+		float ang = atan(e.y, e.x);
+		float r = length(e) * (1.0 + 0.035 * sin(ang * 15.0) + 0.02 * sin(ang * 6.0 + 1.0));
+		inside = 1.0 - r;
+		// Notch where the petiole joins (heart-shaped base).
+		if (q.y < 0.12 && abs(q.x) < (0.12 - q.y) * 0.7) inside = -1.0;
+		float mid = 1.0 - smoothstep(0.004, 0.012, abs(q.x));
+		float lat = 1.0 - smoothstep(0.0, 0.035, abs(fract((q.y - abs(q.x) * 0.85) * 6.0) - 0.5));
+		lat *= smoothstep(0.02, 0.06, abs(q.x));
+		tone = 0.35 + 0.15 * sin(q.x * 9.0 + q.y * 5.0) + max(mid, lat * 0.6) * 0.5;
+	} else if (tuv.x > 0.0 && tuv.x < 1.0 && tuv.y > 0.0 && tuv.y < 1.0) {
 		float n = (tile == 2) ? 6.0 : (tile == 4 ? 6.0 : (tile == 7 ? 1.0 : 3.0));
 		vec2 cell = floor(tuv * n);
 		vec2 f = fract(tuv * n);
